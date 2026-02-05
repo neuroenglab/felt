@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -37,6 +37,28 @@ def check_file_setting_consistency(loaded_jsons):
 class ProcessFeedbackRequest(BaseModel):
     filenames: list[str]
     k: int
+
+@app.post("/api/upload-logs")
+async def upload_logs(files: list[UploadFile] = File(...)):
+    """Upload feedback log JSON files. Returns paths for use with process-feedback."""
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    result = []
+    for f in files:
+        if not f.filename or not f.filename.lower().endswith(".json"):
+            continue
+        content = await f.read()
+        try:
+            json.loads(content)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {f.filename}")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in f.filename)
+        out_name = f"uploaded_{timestamp}_{safe_name}"
+        path = os.path.join(LOGS_DIR, out_name)
+        with open(path, "wb") as fp:
+            fp.write(content)
+        result.append({"path": path, "filename": f.filename})
+    return {"uploads": result}
 
 @app.get("/api/logs")
 async def list_logs():
