@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 
 import {
@@ -7,8 +8,9 @@ import {
 } from '@neuroenglab/nel-feedback-ui';
 
 import { SvgFilePicker } from './components/SvgFilePicker';
+import { ProcessFeedbackPage } from './pages/ProcessFeedbackPage';
 
-function App() {
+function MarkSensationsPage() {
   const [feedbackLocation, setFeedbackLocation] = useState<SensationLocation | undefined>(undefined);
   const [customSvg, setCustomSvg] = useState<string | null>(null);
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
@@ -77,6 +79,9 @@ function App() {
           <h1 className="app-title">Perception Feedback Tool</h1>
           <p className="app-subtitle">Load a body-part SVG and mark perceived sensations.</p>
         </div>
+        <Link to="/process" className="secondary-button">
+          Process feedback →
+        </Link>
       </header>
 
       <main className="app-main">
@@ -138,13 +143,22 @@ function App() {
       </main>
 
       {toast && (
-        <div
-          className={`toast toast-${toast.type}`}
-        >
+        <div className={`toast toast-${toast.type}`}>
           {toast.message}
         </div>
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<MarkSensationsPage />} />
+        <Route path="/process" element={<ProcessFeedbackPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

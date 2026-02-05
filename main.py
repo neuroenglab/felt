@@ -14,7 +14,7 @@ from itertools import combinations
 
 app = FastAPI()
 
-LOGS_DIR = "logs_test"
+LOGS_DIR = "perception_logs"
 
 #########################################################
 ################## Serve API Endpoints ##################
@@ -37,6 +37,24 @@ def check_file_setting_consistency(loaded_jsons):
 class ProcessFeedbackRequest(BaseModel):
     filenames: list[str]
     k: int
+
+@app.get("/api/logs")
+async def list_logs():
+    """List available feedback log files for process-feedback."""
+    if not os.path.isdir(LOGS_DIR):
+        return {"logs": []}
+    logs = []
+    for f in sorted(os.listdir(LOGS_DIR)):
+        if f.endswith(".json"):
+            path = os.path.join(LOGS_DIR, f)
+            try:
+                with open(path, "r") as fp:
+                    data = json.load(fp)
+                log_id = data.get("log_id", f)
+            except (json.JSONDecodeError, KeyError):
+                log_id = f
+            logs.append({"path": path, "filename": f, "log_id": log_id})
+    return {"logs": logs}
 
 @app.post("/api/process-feedback")
 async def process_feedback(data: ProcessFeedbackRequest):

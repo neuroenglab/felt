@@ -54,6 +54,101 @@
   color: #6b7280;
 }
 
+.panel-error {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  background: #fef2f2;
+  color: #dc2626;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.panel-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-list li label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.log-list li label:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.log-list input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.log-id {
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.log-filename {
+  font-size: 0.85rem;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k-input {
+  width: 80px;
+  padding: 8px 12px;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid #9ca3af;
+  font-family: inherit;
+}
+
+.process-result {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  border: 1px solid #9ca3af;
+}
+
+.process-result h3 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.process-result dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-size: 0.95rem;
+}
+
+.process-result dt {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.process-result dd {
+  margin: 0;
+}
+
 .panel-header-row {
   display: flex;
   align-items: flex-start;
