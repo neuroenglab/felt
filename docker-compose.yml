@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        # This takes the NODE_AUTH_TOKEN from your shell and passes it to the Dockerfile
+        - NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_AUTH_TOKEN=${NODE_AUTH_TOKEN}
+    volumes:
+      - ./logs:/app/logs

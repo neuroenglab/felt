@@ -69,16 +69,30 @@ async def serve_spa(full_path: str):
         return FileResponse(index_file)
     return {"detail": "Frontend not built (npm run build)"}
 
-if __name__=="__main__":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run perception feedback app")
+
     parser.add_argument(
         "--log-dir",
         type=str,
         default=LOGS_DIR,
         help="Directory where feedback logs will be stored",
     )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host to bind the server to",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=5000,
+        help="Port to bind the server to",
+    )
+
     args = parser.parse_args()
 
     LOGS_DIR = args.log_dir
 
-    uvicorn.run("main:app", port=5000, log_level="debug", reload=True)
+    uvicorn.run("main:app", host=args.host, port=args.port, log_level="info", reload=True)
