@@ -29,6 +29,7 @@ COPY main.py ./main.py
 # Copy from the 'frontend-build' stage instead of the local folder
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
+ENV LOGS_DIR=/app/logs
 EXPOSE 5000
 
 CMD ["uv", "run", "main.py", "--host", "0.0.0.0", "--port", "5000", "--log-dir", "/app/logs"]

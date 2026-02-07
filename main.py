@@ -14,7 +14,7 @@ from itertools import combinations
 
 app = FastAPI()
 
-LOGS_DIR = "perception_logs"
+LOGS_DIR = os.environ.get("LOGS_DIR", "logs")
 
 #########################################################
 ################## Serve API Endpoints ##################
@@ -178,17 +178,18 @@ class FeedbackLog(BaseModel):
 @app.post("/api/save-feedback")
 async def save_feedback(log_data: FeedbackLog):
     try:
+        os.makedirs(LOGS_DIR, exist_ok=True)
         # Create a unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = log_data.log_id + "_" + log_data.filename.replace(".svg", "_svg") + "_" + timestamp + ".json"
         file_path = os.path.join(LOGS_DIR, filename)
 
-        log_data.model_dump()["log_id"] = log_data.log_id
-        log_data.model_dump()["feedbackLocation"]["exported_at"] = timestamp
+        payload = log_data.model_dump()
+        payload["log_id"] = log_data.log_id
+        payload["feedbackLocation"]["exported_at"] = timestamp
 
-        # Write the data to disk
         with open(file_path, "w") as f:
-            json.dump(log_data.model_dump(), f, indent=2)
+            json.dump(payload, f, indent=2)
 
         return {"status": "success", "filename": filename}
     except Exception as e:
@@ -243,6 +244,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    os.environ["LOGS_DIR"] = args.log_dir
     LOGS_DIR = args.log_dir
     os.makedirs(LOGS_DIR, exist_ok=True)
 
