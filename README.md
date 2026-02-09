@@ -1,38 +1,52 @@
-## Perception Feedback Tool
+# FELT: Perception Feedback Tool
 
 Interactive web app for marking perceived sensations on body-part SVGs and exporting structured logs.
 
+## Install
+
 ### Prerequisites
 
-- GitHub access to the `@neuroenglab/nel-feedback-ui` private package.
-- A GitHub Packages token with `read:packages` scope, set as `NODE_AUTH_TOKEN`.
+#### 1. Authentication for GitHub Container Registry (ghcr.io)
 
-Example `.npmrc` (do **not** commit a real token):
+To pull Docker images from this organization, you must authenticate using a GitHub Personal Access Token (PAT).
 
-```ini
-@neuroenglab:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+### 1. Generate a Personal Access Token (PAT)
+1. Go to **GitHub Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
+2. Click **Generate new token (classic)**.
+3. Select the **`read:packages`** scope (and `write:packages` if you need to push).
+4. **Copy the token; you will not be able to see it again.**
+
+### 2. Login via Terminal
+Run the following command in your terminal, replacing the placeholders with your details:
+
+```bash
+export CR_PAT=YOUR_TOKEN_HERE
+echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 ```
-
-Then set `NODE_AUTH_TOKEN` in your shell (or use a `.env` file for Docker Compose).
+Once you see Login Succeeded, you can pull images using: docker pull ghcr.io/ORGANIZATION_NAME/IMAGE_NAME:TAG
 
 ### Run with Docker (recommended)
 
-1. Build and start:
+1. Pull image:
 
 ```bash
-NODE_AUTH_TOKEN=<your_personal_access_token> docker compose up --build
+docker pull ghcr.io/neuroenglab/felt:v<version>
+```
+
+2. Start container:
+```bash
+docker run -d --rm -p 11055:5000 -v $(pwd)/logging:/app/logs --name felt ghcr.io/neuroenglab/felt:v<version>
 ```
 
 2. Open the app in your browser:
 
 ```text
-http://localhost:5000
+http://localhost:11055
 ```
 
 3. Logs:
 
-- Saved JSON logs are written into the `logs/` directory on the host (mounted into the container).
+- Saved JSON logs are written into the `logging/` directory on the host.
 
 ### Local development without Docker
 
@@ -50,8 +64,6 @@ cd frontend
 npm install
 npm run dev
 ```
-
-Then open the Vite dev URL (usually `http://localhost:5173`) and ensure the backend is running on port `5000` for the `/api/save-feedback` endpoint.
 
 ## Releasing
 
@@ -73,3 +85,4 @@ Tag:
 
 Push:
 `docker push ghcr.io/neuroenglab/felt:v<version>`
+
