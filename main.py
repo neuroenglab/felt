@@ -12,6 +12,7 @@ from pathlib import Path
 import argparse
 
 from src.stability import compute_stability
+from src.visualization import render_visualizations
 
 app = FastAPI()
 
@@ -113,7 +114,25 @@ async def process_feedback(data: ProcessFeedbackRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {"status": "success", **result}
+    visuals = render_visualizations(loaded_jsons, result.get("best_combination"))
+
+    heatmap_metadata = {
+        "source": "all_selected_logs",
+        "num_files": num_files,
+    }
+    intersection_metadata = {
+        "source": "best_k_combination",
+        "k": data.k,
+        "file_ids": list(result.get("best_combination") or []),
+    }
+
+    return {
+        "status": "success",
+        **result,
+        **visuals,
+        "heatmap_metadata": heatmap_metadata,
+        "intersection_metadata": intersection_metadata,
+    }
 
 class FeedbackLog(BaseModel):
     log_id: str
