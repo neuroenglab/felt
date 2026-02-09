@@ -10,11 +10,20 @@ import json
 from datetime import datetime
 from pathlib import Path
 import argparse
-from itertools import combinations
+
+from src.stability import compute_stability
+from src.visualization import render_visualizations
 
 app = FastAPI()
 
 LOGS_DIR = os.environ.get("LOGS_DIR", "logs")
+IMAGES_DIR = os.environ.get(
+    "IMAGES_DIR", str(Path(__file__).resolve().parent / "uploads")
+)
+
+os.makedirs(IMAGES_DIR, exist_ok=True)
+# Ensure visualization module sees the same uploads directory
+os.environ["IMAGES_DIR"] = IMAGES_DIR
 
 #########################################################
 ################## Serve API Endpoints ##################
@@ -37,6 +46,7 @@ def check_file_setting_consistency(loaded_jsons):
 class ProcessFeedbackRequest(BaseModel):
     filenames: list[str]
     k: int
+    include_original: bool = True
 
 @app.post("/api/upload-logs")
 async def upload_logs(files: list[UploadFile] = File(...)):
@@ -59,6 +69,40 @@ async def upload_logs(files: list[UploadFile] = File(...)):
             fp.write(content)
         result.append({"path": path, "filename": f.filename})
     return {"uploads": result}
+
+
+@app.post("/api/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload a body-part SVG image for reuse and visualization overlays."""
+    if not file.filename or not file.filename.lower().endswith(".svg"):
+        raise HTTPException(status_code=400, detail="Only SVG files are supported.")
+
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in file.filename)
+    out_path = os.path.join(IMAGES_DIR, safe_name)
+
+    contents = await file.read()
+    try:
+        with open(out_path, "wb") as f:
+            f.write(contents)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store image: {e}") from e
+
+    return {"filename": safe_name, "url": f"/uploads/{safe_name}"}
+
+
+@app.get("/api/images")
+async def list_images():
+    """List available uploaded body-part SVG images."""
+    if not os.path.isdir(IMAGES_DIR):
+        return {"images": []}
+
+    images = []
+    for f in sorted(os.listdir(IMAGES_DIR)):
+        if f.lower().endswith(".svg"):
+            images.append({"filename": f, "url": f"/uploads/{f}"})
+    return {"images": images}
 
 @app.get("/api/logs")
 async def list_logs():
@@ -107,68 +151,35 @@ async def process_feedback(data: ProcessFeedbackRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 1. Calculate the area of each individual file
-    # And store the point sets for intersection
-    areas = {}
-    point_sets = {}
-    segment_sizes = {} # To convert point counts back to area
+    try:
+        result = compute_stability(loaded_jsons, data.k)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    for file_id, log_data in loaded_jsons.items():
-        fl = log_data["feedbackLocation"]
-        w = fl["segment_size_px"]["w"]
-        h = fl["segment_size_px"]["h"]
+    visuals = render_visualizations(
+        loaded_jsons,
+        result.get("best_combination"),
+        include_original=data.include_original,
+    )
 
-        # Create a set of (row, col) tuples
-        rows = fl["chosenPoints"]["row"]
-        cols = fl["chosenPoints"]["col"]
-        points = set(zip(rows, cols))
-
-        point_sets[file_id] = points
-        areas[file_id] = len(points) * w * h
-        segment_sizes[file_id] = (w, h)
-
-    # 2. Find best_day_area (Max area from all individual files)
-    if not areas:
-        raise HTTPException(status_code=400, detail="No valid data found")
-
-    max_area_file = max(areas, key=areas.get)
-    best_day_area = areas[max_area_file]
-
-    # 3. Calculate intersections for all k-sized combinations
-    k = min(data.k, len(loaded_jsons))
-    all_combinations = list(combinations(loaded_jsons.keys(), k))
-
-    max_stable_overlap = 0.0
-    best_combo = None
-
-    for combo in all_combinations:
-        # Start with the first file's points
-        intersect_points = point_sets[combo[0]]
-        # Intersect with all other files in the combination
-        for other_file in combo[1:]:
-            intersect_points = intersect_points.intersection(point_sets[other_file])
-
-        # Calculate area of this intersection
-        # Note: We assume coarseness is consistent across files being compared.
-        # We use the segment size from the first file in the combo.
-        w, h = segment_sizes[combo[0]]
-        current_overlap_area = len(intersect_points) * w * h
-
-        if current_overlap_area >= max_stable_overlap:
-            max_stable_overlap = current_overlap_area
-            best_combo = combo
-
-    # 4. Calculate Stability
-    stability_score = max_stable_overlap / best_day_area if best_day_area > 0 else 0
-
-    return {
-        "status": "success",
-        "stability_score": stability_score,
-        "stable_overlap_area": max_stable_overlap,
-        "best_day_area": best_day_area,
-        "max_area_file": max_area_file,
-        "best_combination": best_combo,
+    heatmap_metadata = {
+        "source": "all_selected_logs",
+        "num_files": num_files,
     }
+    intersection_metadata = {
+        "source": "best_k_combination",
+        "k": data.k,
+        "file_ids": list(result.get("best_combination") or []),
+    }
+
+    response: Dict[str, Any] = {
+        "status": "success",
+        **result,
+        **visuals,
+        "heatmap_metadata": heatmap_metadata,
+        "intersection_metadata": intersection_metadata,
+    }
+    return response
 
 class FeedbackLog(BaseModel):
     log_id: str
@@ -200,7 +211,16 @@ async def save_feedback(log_data: FeedbackLog):
 ##################### Serve frontend ####################
 #########################################################
 
-frontend_path = Path(__file__).resolve().parent / "frontend" / "dist"
+base_dir = Path(__file__).resolve().parent
+frontend_path = base_dir / "frontend" / "dist"
+images_path = Path(IMAGES_DIR)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(images_path)),
+    name="uploads",
+)
+
 if frontend_path.exists():
     app.mount(
         "/",

@@ -26,10 +26,12 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev
 
 COPY main.py ./main.py
+COPY src/ ./src/
 # Copy from the 'frontend-build' stage instead of the local folder
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 ENV LOGS_DIR=/app/logs
+ENV IMAGES_DIR=/app/uploads
 EXPOSE 5000
 
 CMD ["uv", "run", "main.py", "--host", "0.0.0.0", "--port", "5000", "--log-dir", "/app/logs"]

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 
@@ -10,16 +10,33 @@ import {
 import { SvgFilePicker } from './components/SvgFilePicker';
 import { ProcessFeedbackPage } from './pages/ProcessFeedbackPage';
 
+type BodyImage = {
+  filename: string;
+  url: string;
+};
+
 function MarkSensationsPage() {
   const [feedbackLocation, setFeedbackLocation] = useState<SensationLocation | undefined>(undefined);
   const [customSvg, setCustomSvg] = useState<string | null>(null);
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [availableImages, setAvailableImages] = useState<BodyImage[]>([]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2000); // Disappears after 2000ms
   };
+
+  useEffect(() => {
+    fetch('/api/images')
+      .then((res) => res.json())
+      .then((data: { images: BodyImage[] }) => {
+        setAvailableImages(data.images ?? []);
+      })
+      .catch((err) => {
+        console.error('Failed to load body images', err);
+      });
+  }, []);
 
   const exportFeedbackLog = async () => {
     if (!feedbackLocation) {
@@ -85,11 +102,11 @@ function MarkSensationsPage() {
       </header>
 
       <main className="app-main">
-        {!customSvg ? (
+        {!customSvg && (
           <section className="panel panel-picker">
             <h2 className="panel-title">1. Choose body image</h2>
             <p className="panel-description">
-              Select a single SVG file from your computer. This will be used as the canvas for marking sensation locations.
+              Select an SVG file from your computer or choose from previously uploaded images.
             </p>
             <SvgFilePicker
               onSelect={({ imageUrl, originalName }) => {
@@ -98,8 +115,33 @@ function MarkSensationsPage() {
                 setFeedbackLocation(undefined);
               }}
             />
+
+            {availableImages.length > 0 && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <h3 className="panel-subtitle">Previously uploaded images</h3>
+                <ul className="log-list">
+                  {availableImages.map((img) => (
+                    <li key={img.filename}>
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-small"
+                        onClick={() => {
+                          setCustomSvg(img.url);
+                          setSelectedImageName(img.filename);
+                          setFeedbackLocation(undefined);
+                        }}
+                      >
+                        {img.filename}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
-        ) : (
+        )}
+
+        {customSvg && (
           <section className="panel panel-locator">
             <div className="panel-header-row">
               <div>
