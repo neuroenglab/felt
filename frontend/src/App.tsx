@@ -22,20 +22,22 @@ function MarkSensationsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [availableImages, setAvailableImages] = useState<BodyImage[]>([]);
 
+  const refreshImages = () => {
+    fetch('/api/images')
+      .then((res) => res.json())
+      .then((data: { images: BodyImage[] }) => {
+        setAvailableImages(data.images ?? []);
+      })
+      .catch((err) => console.error('Failed to load body images', err));
+  };
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2000); // Disappears after 2000ms
   };
 
   useEffect(() => {
-    fetch('/api/images')
-      .then((res) => res.json())
-      .then((data: { images: BodyImage[] }) => {
-        setAvailableImages(data.images ?? []);
-      })
-      .catch((err) => {
-        console.error('Failed to load body images', err);
-      });
+    refreshImages();
   }, []);
 
   const exportFeedbackLog = async () => {
@@ -119,12 +121,12 @@ function MarkSensationsPage() {
             {availableImages.length > 0 && (
               <div style={{ marginTop: '1.5rem' }}>
                 <h3 className="panel-subtitle">Previously uploaded images</h3>
-                <ul className="log-list">
+                <ul className="log-list body-parts-list">
                   {availableImages.map((img) => (
-                    <li key={img.filename}>
+                    <li key={img.filename} className="body-parts-list-item">
                       <button
                         type="button"
-                        className="secondary-button secondary-button-small"
+                        className="secondary-button secondary-button-small body-part-button"
                         onClick={() => {
                           setCustomSvg(img.url);
                           setSelectedImageName(img.filename);
@@ -132,6 +134,31 @@ function MarkSensationsPage() {
                         }}
                       >
                         {img.filename}
+                      </button>
+                      <button
+                        type="button"
+                        className="body-part-remove"
+                        onClick={() => {
+                          if (!window.confirm(`Delete "${img.filename}"? This cannot be undone.`)) return;
+                          fetch(`/api/images/${encodeURIComponent(img.filename)}`, { method: 'DELETE' })
+                            .then((res) => {
+                              if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d.detail ?? 'Delete failed')));
+                              return res.json();
+                            })
+                            .then(() => {
+                              refreshImages();
+                              if (selectedImageName === img.filename) {
+                                setCustomSvg(null);
+                                setSelectedImageName(null);
+                                setFeedbackLocation(undefined);
+                              }
+                              showToast('Image deleted');
+                            })
+                            .catch((err) => showToast(err instanceof Error ? err.message : 'Delete failed', 'error'));
+                        }}
+                        title="Delete this image"
+                      >
+                        ×
                       </button>
                     </li>
                   ))}

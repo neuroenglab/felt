@@ -122,6 +122,51 @@ async def list_logs():
             logs.append({"path": path, "filename": f, "log_id": log_id})
     return {"logs": logs}
 
+
+class DeleteLogsRequest(BaseModel):
+    paths: list[str]
+
+
+def _path_under(base_dir: str, path: str) -> bool:
+    """Return True if path is under base_dir (no path traversal)."""
+    base = os.path.realpath(base_dir)
+    resolved = os.path.realpath(path)
+    return resolved == base or resolved.startswith(base + os.sep)
+
+
+@app.post("/api/logs/delete")
+async def delete_logs(body: DeleteLogsRequest):
+    """Delete selected log files by path. Paths must be under LOGS_DIR."""
+    deleted = []
+    for path in body.paths:
+        if not _path_under(LOGS_DIR, path):
+            raise HTTPException(status_code=400, detail=f"Invalid path: {path}")
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                deleted.append(path)
+            except OSError as e:
+                raise HTTPException(status_code=500, detail=str(e)) from e
+    return {"deleted": deleted}
+
+
+@app.delete("/api/images/{filename}")
+async def delete_image(filename: str):
+    """Delete an uploaded body-part image by filename."""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in filename)
+    if safe != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(IMAGES_DIR, safe)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    try:
+        os.remove(path)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return {"status": "deleted", "filename": safe}
+
 @app.post("/api/process-feedback")
 async def process_feedback(data: ProcessFeedbackRequest):
     loaded_jsons = {}
