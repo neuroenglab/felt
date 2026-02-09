@@ -52,3 +52,24 @@ npm run dev
 ```
 
 Then open the Vite dev URL (usually `http://localhost:5173`) and ensure the backend is running on port `5000` for the `/api/save-feedback` endpoint.
+
+## Releasing
+
+### Github
+
+Tag commit on the master branch:
+`git tag -a v<version> -m <release_message>`
+
+Push to github:
+`git push origin v<version>`
+
+### Docker
+
+Build:
+`docker compose build --no-cache`
+
+Tag:
+`docker tag felt-app ghcr.io/neuroenglab/felt:v<version>`
+
+Push:
+`docker push ghcr.io/neuroenglab/felt:v<version>`
