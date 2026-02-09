@@ -95,18 +95,75 @@ def _compose_with_background(
     The background is scaled to fit the given image_height and shifted
     down by y_offset so we can reserve space (e.g. for legends) above.
     """
-    # Determine intrinsic size of the background SVG to compute a scale factor
+    # Determine intrinsic size of the background SVG from viewBox or width/height,
+    # and ensure the file has explicit numeric width/height so svgutils doesn't fail.
+    bg_temp_path: str | None = None
     try:
-        root = ET.parse(background_path).getroot()
-        orig_w = float(root.get("width", str(canvas_width)))
-        orig_h = float(root.get("height", str(image_height)))
+        tree = ET.parse(background_path)
+        root = tree.getroot()
+
+        w_attr = root.get("width")
+        h_attr = root.get("height")
+
+        def _parse_len(val: str | None, default: float) -> float:
+            if not val:
+                return default
+            v = val.strip()
+            for suffix in ("px",):
+                if v.endswith(suffix):
+                    v = v[: -len(suffix)]
+                    break
+            try:
+                return float(v)
+            except ValueError:
+                return default
+
+        # Prefer viewBox for intrinsic size so the body drawing fills the area correctly.
+        viewbox = root.get("viewBox")
+        if viewbox:
+            parts = viewbox.strip().split()
+            if len(parts) == 4:
+                try:
+                    _vb_x, _vb_y, vb_w, vb_h = float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])
+                    if vb_w > 0 and vb_h > 0:
+                        orig_w, orig_h = vb_w, vb_h
+                    else:
+                        orig_w = _parse_len(w_attr, canvas_width)
+                        orig_h = _parse_len(h_attr, image_height)
+                except (ValueError, TypeError):
+                    orig_w = _parse_len(w_attr, canvas_width)
+                    orig_h = _parse_len(h_attr, image_height)
+            else:
+                orig_w = _parse_len(w_attr, canvas_width)
+                orig_h = _parse_len(h_attr, image_height)
+        else:
+            orig_w = _parse_len(w_attr, canvas_width)
+            orig_h = _parse_len(h_attr, image_height)
+
+        # Ensure numeric width/height on the root so svgutils can read the file.
+        # Use intrinsic size (orig_w, orig_h), not canvas size, so our scale() below
+        # stretches the background to exactly (canvas_width, image_height) and aligns with the overlay.
+        need_temp = False
+        if not w_attr or (isinstance(w_attr, str) and w_attr.endswith("%")):
+            root.set("width", str(orig_w))
+            need_temp = True
+        if not h_attr or (isinstance(h_attr, str) and h_attr.endswith("%")):
+            root.set("height", str(orig_h))
+            need_temp = True
+
+        if need_temp:
+            tmp_bg = tempfile.NamedTemporaryFile(suffix=".svg", delete=False)
+            bg_temp_path = tmp_bg.name
+            tmp_bg.close()
+            tree.write(bg_temp_path, encoding="unicode")
     except Exception:
         orig_w, orig_h = canvas_width, image_height
 
     sx = canvas_width / orig_w if orig_w else 1.0
     sy = image_height / orig_h if orig_h else 1.0
 
-    bg = SVG(str(background_path)).scale(sx, sy).move(0, y_offset)
+    bg_source = bg_temp_path if bg_temp_path is not None else str(background_path)
+    bg = SVG(bg_source).scale(sx, sy).move(0, y_offset)
 
     # svgutils.compose.SVG expects a filename, not raw SVG content.
     # Write the overlay SVG to a temporary file and load it from there.
@@ -131,6 +188,12 @@ def _compose_with_background(
             os.remove(tmp_path)
         except OSError:
             pass
+        # Clean up the temporary background file, if we created one
+        if 'bg_temp_path' in locals() and bg_temp_path is not None:
+            try:
+                os.remove(bg_temp_path)
+            except OSError:
+                pass
 
 def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> str:
     """
