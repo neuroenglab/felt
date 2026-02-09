@@ -100,6 +100,36 @@ export function ProcessFeedbackPage() {
     else setSelected(new Set(logs.map((l) => l.path)));
   };
 
+  const deleteSelectedLogs = async () => {
+    const paths = Array.from(selected);
+    if (paths.length === 0) return;
+    if (!window.confirm(`Delete ${paths.length} selected log file(s) from the server? This cannot be undone.`)) return;
+    setError(null);
+    try {
+      const res = await fetch('/api/logs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ?? 'Delete failed');
+      setSelected(new Set());
+      const next = await fetch('/api/logs').then((r) => r.json());
+      setLogs((next.logs ?? []) as LogEntry[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const deleteSelectedUploaded = () => {
+    if (selectedUploaded.size === 0) return;
+    const count = selectedUploaded.size;
+    if (!window.confirm(`Remove ${count} selected file(s) from the list?`)) return;
+    const toRemove = new Set(selectedUploaded);
+    setUploaded((prev) => prev.filter((u) => !toRemove.has(u.path)));
+    setSelectedUploaded(new Set());
+  };
+
   const uploadFiles = useCallback(async (files: FileList | File[]) => {
     const arr = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.json'));
     if (arr.length === 0) return;
@@ -234,13 +264,24 @@ export function ProcessFeedbackPage() {
             <div className="uploaded-section">
               <div className="uploaded-section-header">
                 <h3 className="uploaded-title">Uploaded ({uploaded.length})</h3>
-                <button
-                  type="button"
-                  className="secondary-button secondary-button-small"
-                  onClick={selectAllUploaded}
-                >
-                  {selectedUploaded.size === uploaded.length ? 'Deselect all' : 'Select all'}
-                </button>
+                <div className="uploaded-section-actions">
+                  <button
+                    type="button"
+                    className="secondary-button secondary-button-small"
+                    onClick={selectAllUploaded}
+                  >
+                    {selectedUploaded.size === uploaded.length ? 'Deselect all' : 'Select all'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button secondary-button-small log-delete-selected"
+                    onClick={deleteSelectedUploaded}
+                    disabled={selectedUploaded.size === 0}
+                    title="Remove selected from list"
+                  >
+                    Delete selected
+                  </button>
+                </div>
               </div>
               <ul className="log-list">
                 {uploaded.map((u) => (
@@ -283,14 +324,24 @@ export function ProcessFeedbackPage() {
               <p className="panel-hint">No log files found. Save feedback first or upload files above.</p>
             ) : (
               <>
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={selectAll}
-                  style={{ marginBottom: 12 }}
-                >
-                  {selected.size === logs.length ? 'Deselect all' : 'Select all'}
-                </button>
+                <div className="server-logs-actions" style={{ marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={selectAll}
+                  >
+                    {selected.size === logs.length ? 'Deselect all' : 'Select all'}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button log-delete-selected"
+                    onClick={deleteSelectedLogs}
+                    disabled={selected.size === 0}
+                    title="Delete selected log files from server"
+                  >
+                    Delete selected
+                  </button>
+                </div>
                 <ul className="log-list">
                   {logs.map((log) => (
                     <li key={log.path}>
