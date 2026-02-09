@@ -10,7 +10,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 import argparse
-from itertools import combinations
+
+from src.stability import compute_stability
 
 app = FastAPI()
 
@@ -107,68 +108,12 @@ async def process_feedback(data: ProcessFeedbackRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 1. Calculate the area of each individual file
-    # And store the point sets for intersection
-    areas = {}
-    point_sets = {}
-    segment_sizes = {} # To convert point counts back to area
+    try:
+        result = compute_stability(loaded_jsons, data.k)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    for file_id, log_data in loaded_jsons.items():
-        fl = log_data["feedbackLocation"]
-        w = fl["segment_size_px"]["w"]
-        h = fl["segment_size_px"]["h"]
-
-        # Create a set of (row, col) tuples
-        rows = fl["chosenPoints"]["row"]
-        cols = fl["chosenPoints"]["col"]
-        points = set(zip(rows, cols))
-
-        point_sets[file_id] = points
-        areas[file_id] = len(points) * w * h
-        segment_sizes[file_id] = (w, h)
-
-    # 2. Find best_day_area (Max area from all individual files)
-    if not areas:
-        raise HTTPException(status_code=400, detail="No valid data found")
-
-    max_area_file = max(areas, key=areas.get)
-    best_day_area = areas[max_area_file]
-
-    # 3. Calculate intersections for all k-sized combinations
-    k = min(data.k, len(loaded_jsons))
-    all_combinations = list(combinations(loaded_jsons.keys(), k))
-
-    max_stable_overlap = 0.0
-    best_combo = None
-
-    for combo in all_combinations:
-        # Start with the first file's points
-        intersect_points = point_sets[combo[0]]
-        # Intersect with all other files in the combination
-        for other_file in combo[1:]:
-            intersect_points = intersect_points.intersection(point_sets[other_file])
-
-        # Calculate area of this intersection
-        # Note: We assume coarseness is consistent across files being compared.
-        # We use the segment size from the first file in the combo.
-        w, h = segment_sizes[combo[0]]
-        current_overlap_area = len(intersect_points) * w * h
-
-        if current_overlap_area >= max_stable_overlap:
-            max_stable_overlap = current_overlap_area
-            best_combo = combo
-
-    # 4. Calculate Stability
-    stability_score = max_stable_overlap / best_day_area if best_day_area > 0 else 0
-
-    return {
-        "status": "success",
-        "stability_score": stability_score,
-        "stable_overlap_area": max_stable_overlap,
-        "best_day_area": best_day_area,
-        "max_area_file": max_area_file,
-        "best_combination": best_combo,
-    }
+    return {"status": "success", **result}
 
 class FeedbackLog(BaseModel):
     log_id: str
