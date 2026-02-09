@@ -266,20 +266,21 @@ app.mount(
     name="uploads",
 )
 
-if frontend_path.exists():
-    app.mount(
-        "/",
-        StaticFiles(directory=str(frontend_path), html=True),
-        name="frontend",
-    )
-
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """
-    Serve frontend single-page app for non-api requests.
+    Serve frontend single-page app: real files when they exist, else index.html
+    so client-side routes (e.g. /process) work on reload.
     """
     if full_path.startswith("api/"):
         return {"detail": "Not found"}
+    if not frontend_path.exists():
+        return {"detail": "Frontend not built (npm run build)"}
+    # Serve existing static files (e.g. vite.svg, assets/*)
+    safe_path = (frontend_path / full_path).resolve()
+    if full_path and safe_path.is_file() and str(safe_path).startswith(str(frontend_path)):
+        return FileResponse(safe_path)
+    # Otherwise serve index.html for SPA client-side routing
     index_file = frontend_path / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
