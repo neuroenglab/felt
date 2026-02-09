@@ -12,6 +12,17 @@ type UploadedEntry = {
   filename: string;
 };
 
+type HeatmapMetadata = {
+  source: 'all_selected_logs';
+  num_files: number;
+};
+
+type IntersectionMetadata = {
+  source: 'best_k_combination';
+  k: number;
+  file_ids: string[];
+};
+
 type ProcessResult = {
   status: string;
   stability_score: number;
@@ -19,6 +30,10 @@ type ProcessResult = {
   best_day_area: number;
   max_area_file: string;
   best_combination: string[] | null;
+  heatmap_svg?: string;
+  intersection_svg?: string;
+  heatmap_metadata?: HeatmapMetadata;
+  intersection_metadata?: IntersectionMetadata;
 };
 
 export function ProcessFeedbackPage() {
@@ -158,7 +173,7 @@ export function ProcessFeedbackPage() {
         throw new Error(data.detail ?? 'Process failed');
       }
 
-      setResult(data);
+      setResult(data as ProcessResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -340,6 +355,90 @@ export function ProcessFeedbackPage() {
                   </>
                 )}
               </dl>
+
+              {(result.heatmap_svg || result.intersection_svg) && (
+                <div className="visualizations">
+                  <h4>Visualizations</h4>
+
+                  {result.heatmap_svg && (
+                    <div className="visualization-block">
+                      <div className="visualization-header">
+                        <h5>Heatmap</h5>
+                        {result.heatmap_metadata && (
+                          <p className="visualization-meta">
+                            Based on all selected logs (n={result.heatmap_metadata.num_files})
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className="visualization-svg"
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: result.heatmap_svg }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-small"
+                        onClick={() => {
+                          if (!result.heatmap_svg) return;
+                          const blob = new Blob([result.heatmap_svg], {
+                            type: 'image/svg+xml;charset=utf-8',
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'heatmap.svg';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Download heatmap
+                      </button>
+                    </div>
+                  )}
+
+                  {result.intersection_svg && (
+                    <div className="visualization-block">
+                      <div className="visualization-header">
+                        <h5>Intersection</h5>
+                        {result.intersection_metadata && (
+                          <p className="visualization-meta">
+                            Best k-combination (k={result.intersection_metadata.k}) using files:
+                            {' '}
+                            {result.intersection_metadata.file_ids.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className="visualization-svg"
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: result.intersection_svg }}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button secondary-button-small"
+                        onClick={() => {
+                          if (!result.intersection_svg) return;
+                          const blob = new Blob([result.intersection_svg], {
+                            type: 'image/svg+xml;charset=utf-8',
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'intersection.svg';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        Download intersection
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </section>

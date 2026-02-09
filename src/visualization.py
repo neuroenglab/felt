@@ -4,44 +4,47 @@ and intersection (cells selected in all files of the best combination).
 """
 
 from typing import Any
+from pathlib import Path
 
 
-def _get_point_sets_and_geometry(loaded_jsons: dict) -> tuple[dict[str, set], float, float, int, int, int, int]:
-    """Extract point sets and grid geometry from loaded_jsons. Returns (point_sets, seg_w, seg_h, min_row, max_row, min_col, max_col)."""
-    point_sets = {}
-    seg_w, seg_h = 1.0, 1.0
-    min_row = min_col = float("inf")
-    max_row = max_col = float("-inf")
+def _get_point_sets_and_geometry(
+    loaded_jsons: dict,
+) -> tuple[dict[str, set], float, float, float, float, str]:
+    """
+    Extract point sets and geometry from loaded_jsons.
+
+    Returns (point_sets, seg_w, seg_h, image_w, image_h, image_path).
+    Uses the first file's feedbackLocation as the canonical geometry, assuming
+    consistency has already been checked in the API layer.
+    """
+    point_sets: dict[str, set] = {}
+    seg_w = seg_h = 1.0
+    image_w = image_h = 1.0
+    image_path = ""
+    first = True
 
     for file_id, log_data in loaded_jsons.items():
         fl = log_data["feedbackLocation"]
         w = fl["segment_size_px"]["w"]
         h = fl["segment_size_px"]["h"]
-        seg_w, seg_h = w, h
+
+        if first:
+            seg_w, seg_h = float(w), float(h)
+            img_size = fl.get("image_size") or {}
+            image_w = float(img_size.get("w", seg_w))
+            image_h = float(img_size.get("h", seg_h))
+            image_path = str(fl.get("image_path", ""))
+            first = False
 
         rows = fl["chosenPoints"]["row"]
         cols = fl["chosenPoints"]["col"]
         points = set(zip(rows, cols))
         point_sets[file_id] = points
 
-        for r, c in points:
-            min_row = min(min_row, r)
-            max_row = max(max_row, r)
-            min_col = min(min_col, c)
-            max_col = max(max_col, c)
-
     if not point_sets:
-        return point_sets, seg_w, seg_h, 0, 0, 0, 0
+        return point_sets, seg_w, seg_h, image_w, image_h, image_path
 
-    return (
-        point_sets,
-        seg_w,
-        seg_h,
-        int(min_row),
-        int(max_row),
-        int(min_col),
-        int(max_col),
-    )
+    return point_sets, seg_w, seg_h, image_w, image_h, image_path
 
 
 def _count_per_cell(point_sets: dict[str, set]) -> dict[tuple[int, int], int]:
@@ -83,32 +86,46 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any]) -> str:
     if not loaded_jsons:
         return '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 
-    point_sets, seg_w, seg_h, min_r, max_r, min_c, max_c = _get_point_sets_and_geometry(loaded_jsons)
+    point_sets, seg_w, seg_h, image_w, image_h, image_path = _get_point_sets_and_geometry(loaded_jsons)
     if not point_sets:
         return '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 
     counts = _count_per_cell(point_sets)
-    n_files = len(loaded_jsons)
     max_count = max(counts.values()) if counts else 1
+    width = image_w
+    height = image_h
 
-    width = (max_c - min_c + 1) * seg_w
-    height = (max_r - min_r + 1) * seg_h
+    background = ""
+    if image_path:
+        base_dir = Path(__file__).resolve().parent
+        candidates = [
+            base_dir / "frontend" / "dist" / image_path,
+            base_dir / "frontend" / "public" / image_path,
+            base_dir / image_path,
+        ]
+        if any(p.exists() for p in candidates):
+            background = (
+                f'<image href="{image_path}" x="0" y="0" '
+                f'width="{image_w}" height="{image_h}" preserveAspectRatio="xMidYMid meet" />'
+            )
 
     rects = []
     for (r, c), count in sorted(counts.items()):
-        if count <= 0:
-            continue
         t = count / max_count if max_count else 0
         fill = _rgb_interpolate(t)
-        x = (c - min_c) * seg_w
-        y = (r - min_r) * seg_h
-        rects.append(f'<rect x="{x}" y="{y}" width="{seg_w}" height="{seg_h}" fill="{fill}" stroke="#333" stroke-width="0.5"/>')
+        x = c * seg_w
+        y = r * seg_h
+        rects.append(
+            f'<rect x="{x}" y="{y}" width="{seg_w}" height="{seg_h}" '
+            f'fill="{fill}" fill-opacity="0.6" stroke="#333" stroke-width="0.25"/>'
+        )
 
     body = "\n".join(rects)
     return (
         '<?xml version="1.0"?>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
-        f'<g>{body}</g></svg>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}">'
+        f'{background}<g>{body}</g></svg>'
     )
 
 
@@ -123,26 +140,44 @@ def render_intersection_svg(
     if not loaded_jsons:
         return '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 
-    point_sets, seg_w, seg_h, min_r, max_r, min_c, max_c = _get_point_sets_and_geometry(loaded_jsons)
+    point_sets, seg_w, seg_h, image_w, image_h, image_path = _get_point_sets_and_geometry(loaded_jsons)
     if not point_sets:
         return '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 
     inter = _intersection_points(point_sets, best_combination)
 
-    width = (max_c - min_c + 1) * seg_w
-    height = (max_r - min_r + 1) * seg_h
+    width = image_w
+    height = image_h
+
+    background = ""
+    if image_path:
+        base_dir = Path(__file__).resolve().parent
+        candidates = [
+            base_dir / "frontend" / "dist" / image_path,
+            base_dir / "frontend" / "public" / image_path,
+            base_dir / image_path,
+        ]
+        if any(p.exists() for p in candidates):
+            background = (
+                f'<image href="{image_path}" x="0" y="0" '
+                f'width="{image_w}" height="{image_h}" preserveAspectRatio="xMidYMid meet" />'
+            )
 
     rects = []
     for r, c in sorted(inter):
-        x = (c - min_c) * seg_w
-        y = (r - min_r) * seg_h
-        rects.append(f'<rect x="{x}" y="{y}" width="{seg_w}" height="{seg_h}" fill="steelblue" stroke="#1a5276" stroke-width="0.5"/>')
+        x = c * seg_w
+        y = r * seg_h
+        rects.append(
+            f'<rect x="{x}" y="{y}" width="{seg_w}" height="{seg_h}" '
+            f'fill="steelblue" fill-opacity="0.6" stroke="#1a5276" stroke-width="0.25"/>'
+        )
 
     body = "\n".join(rects)
     return (
         '<?xml version="1.0"?>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
-        f'<g>{body}</g></svg>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}">'
+        f'{background}<g>{body}</g></svg>'
     )
 
 
