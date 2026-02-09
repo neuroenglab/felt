@@ -164,7 +164,7 @@ export function ProcessFeedbackPage() {
       const res = await fetch('/api/process-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filenames, k }),
+        body: JSON.stringify({ filenames, k, include_original: true }),
       });
 
       const data = await res.json();
@@ -359,7 +359,6 @@ export function ProcessFeedbackPage() {
               {(result.heatmap_svg || result.intersection_svg) && (
                 <div className="visualizations">
                   <h4>Visualizations</h4>
-
                   {result.heatmap_svg && (
                     <div className="visualization-block">
                       <div className="visualization-header">

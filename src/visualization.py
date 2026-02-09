@@ -5,7 +5,11 @@ and intersection (cells selected in all files of the best combination).
 
 from typing import Any
 from pathlib import Path
+import os
+import tempfile
+import xml.etree.ElementTree as ET
 
+from svgutils.compose import Figure, Panel, SVG
 
 def _get_point_sets_and_geometry(
     loaded_jsons: dict,
@@ -77,8 +81,55 @@ def _rgb_interpolate(t: float) -> str:
     b = int(255 * (1 - t) + 243 * t)
     return f"rgb({r},{g},{b})"
 
+def _compose_with_background(
+    background_path: Path,
+    overlay_svg: str,
+    width: float,
+    height: float,
+) -> str:
+    """
+    Use svgutils.compose to layer the original SVG (background_path)
+    and the overlay SVG string into a single SVG figure, scaling the
+    background so its coordinate system matches the overlay's width/height.
+    """
+    # Determine intrinsic size of the background SVG to compute a scale factor
+    try:
+        root = ET.parse(background_path).getroot()
+        orig_w = float(root.get("width", str(width)))
+        orig_h = float(root.get("height", str(height)))
+    except Exception:
+        orig_w, orig_h = width, height
 
-def render_heatmap_svg(loaded_jsons: dict[str, Any]) -> str:
+    sx = width / orig_w if orig_w else 1.0
+    sy = height / orig_h if orig_h else 1.0
+
+    bg = SVG(str(background_path)).scale(sx, sy)
+
+    # svgutils.compose.SVG expects a filename, not raw SVG content.
+    # Write the overlay SVG to a temporary file and load it from there.
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".svg", delete=False)
+    try:
+        tmp_file.write(overlay_svg.encode("utf-8"))
+        tmp_file.flush()
+        tmp_path = tmp_file.name
+    finally:
+        tmp_file.close()
+
+    try:
+        ov = SVG(tmp_path)
+        fig = Figure(str(width), str(height),
+                     Panel(bg).move(0, 0),
+                     Panel(ov).move(0, 0))
+        out = fig.tostr()
+        return out.decode("utf-8") if isinstance(out, bytes) else str(out)
+    finally:
+        # Clean up the temporary overlay file
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> str:
     """
     Build an SVG heatmap: each cell is colored by how many files selected it (0 = not drawn, max = darkest).
     Uses segment_size_px from the first file and a bounding box of all chosen points.
@@ -95,20 +146,6 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any]) -> str:
     width = image_w
     height = image_h
 
-    background = ""
-    if image_path:
-        base_dir = Path(__file__).resolve().parent
-        candidates = [
-            base_dir / "frontend" / "dist" / image_path,
-            base_dir / "frontend" / "public" / image_path,
-            base_dir / image_path,
-        ]
-        if any(p.exists() for p in candidates):
-            background = (
-                f'<image href="{image_path}" x="0" y="0" '
-                f'width="{image_w}" height="{image_h}" preserveAspectRatio="xMidYMid meet" />'
-            )
-
     rects = []
     for (r, c), count in sorted(counts.items()):
         t = count / max_count if max_count else 0
@@ -121,17 +158,25 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any]) -> str:
         )
 
     body = "\n".join(rects)
-    return (
-        '<?xml version="1.0"?>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-        f'width="{width}" height="{height}">'
-        f'{background}<g>{body}</g></svg>'
+    overlay_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
+        f'<g>{body}</g></svg>'
     )
+
+    if include_original and image_path:
+        images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
+        bg_path = images_dir / image_path
+        if bg_path.exists():
+            return _compose_with_background(bg_path, overlay_svg, width, height)
+
+    return overlay_svg
 
 
 def render_intersection_svg(
     loaded_jsons: dict[str, Any],
     best_combination: tuple[str, ...] | None,
+    include_original: bool,
 ) -> str:
     """
     Build an SVG of the intersection: only cells selected in every file of best_combination
@@ -149,20 +194,6 @@ def render_intersection_svg(
     width = image_w
     height = image_h
 
-    background = ""
-    if image_path:
-        base_dir = Path(__file__).resolve().parent
-        candidates = [
-            base_dir / "frontend" / "dist" / image_path,
-            base_dir / "frontend" / "public" / image_path,
-            base_dir / image_path,
-        ]
-        if any(p.exists() for p in candidates):
-            background = (
-                f'<image href="{image_path}" x="0" y="0" '
-                f'width="{image_w}" height="{image_h}" preserveAspectRatio="xMidYMid meet" />'
-            )
-
     rects = []
     for r, c in sorted(inter):
         x = c * seg_w
@@ -173,17 +204,25 @@ def render_intersection_svg(
         )
 
     body = "\n".join(rects)
-    return (
-        '<?xml version="1.0"?>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-        f'width="{width}" height="{height}">'
-        f'{background}<g>{body}</g></svg>'
+    overlay_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
+        f'<g>{body}</g></svg>'
     )
+
+    if include_original and image_path:
+        images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
+        bg_path = images_dir / image_path
+        if bg_path.exists():
+            return _compose_with_background(bg_path, overlay_svg, width, height)
+
+    return overlay_svg
 
 
 def render_visualizations(
     loaded_jsons: dict[str, Any],
     best_combination: tuple[str, ...] | None,
+    include_original: bool,
 ) -> dict[str, str]:
     """
     Produce heatmap and intersection SVGs from feedback logs.
@@ -191,6 +230,6 @@ def render_visualizations(
     Returns {"heatmap_svg": "...", "intersection_svg": "..."}.
     """
     return {
-        "heatmap_svg": render_heatmap_svg(loaded_jsons),
-        "intersection_svg": render_intersection_svg(loaded_jsons, best_combination),
+        "heatmap_svg": render_heatmap_svg(loaded_jsons, include_original),
+        "intersection_svg": render_intersection_svg(loaded_jsons, best_combination, include_original),
     }

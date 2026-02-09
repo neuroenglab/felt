@@ -17,6 +17,13 @@ from src.visualization import render_visualizations
 app = FastAPI()
 
 LOGS_DIR = os.environ.get("LOGS_DIR", "logs")
+IMAGES_DIR = os.environ.get(
+    "IMAGES_DIR", str(Path(__file__).resolve().parent / "uploads")
+)
+
+os.makedirs(IMAGES_DIR, exist_ok=True)
+# Ensure visualization module sees the same uploads directory
+os.environ["IMAGES_DIR"] = IMAGES_DIR
 
 #########################################################
 ################## Serve API Endpoints ##################
@@ -39,6 +46,7 @@ def check_file_setting_consistency(loaded_jsons):
 class ProcessFeedbackRequest(BaseModel):
     filenames: list[str]
     k: int
+    include_original: bool = True
 
 @app.post("/api/upload-logs")
 async def upload_logs(files: list[UploadFile] = File(...)):
@@ -61,6 +69,40 @@ async def upload_logs(files: list[UploadFile] = File(...)):
             fp.write(content)
         result.append({"path": path, "filename": f.filename})
     return {"uploads": result}
+
+
+@app.post("/api/upload-image")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload a body-part SVG image for reuse and visualization overlays."""
+    if not file.filename or not file.filename.lower().endswith(".svg"):
+        raise HTTPException(status_code=400, detail="Only SVG files are supported.")
+
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in file.filename)
+    out_path = os.path.join(IMAGES_DIR, safe_name)
+
+    contents = await file.read()
+    try:
+        with open(out_path, "wb") as f:
+            f.write(contents)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to store image: {e}") from e
+
+    return {"filename": safe_name, "url": f"/uploads/{safe_name}"}
+
+
+@app.get("/api/images")
+async def list_images():
+    """List available uploaded body-part SVG images."""
+    if not os.path.isdir(IMAGES_DIR):
+        return {"images": []}
+
+    images = []
+    for f in sorted(os.listdir(IMAGES_DIR)):
+        if f.lower().endswith(".svg"):
+            images.append({"filename": f, "url": f"/uploads/{f}"})
+    return {"images": images}
 
 @app.get("/api/logs")
 async def list_logs():
@@ -114,7 +156,11 @@ async def process_feedback(data: ProcessFeedbackRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    visuals = render_visualizations(loaded_jsons, result.get("best_combination"))
+    visuals = render_visualizations(
+        loaded_jsons,
+        result.get("best_combination"),
+        include_original=data.include_original,
+    )
 
     heatmap_metadata = {
         "source": "all_selected_logs",
@@ -126,13 +172,14 @@ async def process_feedback(data: ProcessFeedbackRequest):
         "file_ids": list(result.get("best_combination") or []),
     }
 
-    return {
+    response: Dict[str, Any] = {
         "status": "success",
         **result,
         **visuals,
         "heatmap_metadata": heatmap_metadata,
         "intersection_metadata": intersection_metadata,
     }
+    return response
 
 class FeedbackLog(BaseModel):
     log_id: str
@@ -164,7 +211,16 @@ async def save_feedback(log_data: FeedbackLog):
 ##################### Serve frontend ####################
 #########################################################
 
-frontend_path = Path(__file__).resolve().parent / "frontend" / "dist"
+base_dir = Path(__file__).resolve().parent
+frontend_path = base_dir / "frontend" / "dist"
+images_path = Path(IMAGES_DIR)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(images_path)),
+    name="uploads",
+)
+
 if frontend_path.exists():
     app.mount(
         "/",

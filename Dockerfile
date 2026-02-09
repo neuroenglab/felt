@@ -31,6 +31,7 @@ COPY src/ ./src/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 ENV LOGS_DIR=/app/logs
+ENV IMAGES_DIR=/app/uploads
 EXPOSE 5000
 
 CMD ["uv", "run", "main.py", "--host", "0.0.0.0", "--port", "5000", "--log-dir", "/app/logs"]

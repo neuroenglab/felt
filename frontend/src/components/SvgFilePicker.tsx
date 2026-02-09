@@ -11,7 +11,7 @@ export function SvgFilePicker({ onSelect }: SvgFilePickerProps) {
     inputRef.current?.click();
   };
 
-  const handleChange: React.ChangeEventHandler<HTMLInputElement> = (event) => {
+  const handleChange: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -21,9 +21,33 @@ export function SvgFilePicker({ onSelect }: SvgFilePickerProps) {
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    const originalName = file.name;
-    onSelect({ imageUrl: url, originalName });
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail ?? 'Failed to upload SVG');
+      }
+
+      const imageUrl: string = data.url ?? `/uploads/${data.filename}`;
+      const originalName: string = data.filename ?? file.name;
+
+      onSelect({ imageUrl, originalName });
+    } catch (err) {
+      console.error(err);
+      alert('Failed to upload SVG to server.');
+    } finally {
+      // Reset input so the same file can be selected again if needed
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
   };
 
   return (
