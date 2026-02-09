@@ -84,26 +84,29 @@ def _rgb_interpolate(t: float) -> str:
 def _compose_with_background(
     background_path: Path,
     overlay_svg: str,
-    width: float,
-    height: float,
+    canvas_width: float,
+    canvas_height: float,
+    image_height: float,
+    y_offset: float,
 ) -> str:
     """
     Use svgutils.compose to layer the original SVG (background_path)
-    and the overlay SVG string into a single SVG figure, scaling the
-    background so its coordinate system matches the overlay's width/height.
+    and the overlay SVG string into a single SVG figure.
+    The background is scaled to fit the given image_height and shifted
+    down by y_offset so we can reserve space (e.g. for legends) above.
     """
     # Determine intrinsic size of the background SVG to compute a scale factor
     try:
         root = ET.parse(background_path).getroot()
-        orig_w = float(root.get("width", str(width)))
-        orig_h = float(root.get("height", str(height)))
+        orig_w = float(root.get("width", str(canvas_width)))
+        orig_h = float(root.get("height", str(image_height)))
     except Exception:
-        orig_w, orig_h = width, height
+        orig_w, orig_h = canvas_width, image_height
 
-    sx = width / orig_w if orig_w else 1.0
-    sy = height / orig_h if orig_h else 1.0
+    sx = canvas_width / orig_w if orig_w else 1.0
+    sy = image_height / orig_h if orig_h else 1.0
 
-    bg = SVG(str(background_path)).scale(sx, sy)
+    bg = SVG(str(background_path)).scale(sx, sy).move(0, y_offset)
 
     # svgutils.compose.SVG expects a filename, not raw SVG content.
     # Write the overlay SVG to a temporary file and load it from there.
@@ -117,9 +120,9 @@ def _compose_with_background(
 
     try:
         ov = SVG(tmp_path)
-        fig = Figure(str(width), str(height),
-                     Panel(bg).move(0, 0),
-                     Panel(ov).move(0, 0))
+        fig = Figure(str(canvas_width), str(canvas_height),
+                     Panel(bg),
+                     Panel(ov))
         out = fig.tostr()
         return out.decode("utf-8") if isinstance(out, bytes) else str(out)
     finally:
@@ -144,31 +147,88 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> 
     counts = _count_per_cell(point_sets)
     max_count = max(counts.values()) if counts else 1
     width = image_w
-    height = image_h
+    base_height = image_h
+
+    # Reserve extra vertical space for a legend above the image
+    legend_block_height = max(base_height * 0.2, 80.0)
+    margin_top = 8.0
+    y_offset = legend_block_height + margin_top
+    height = base_height + y_offset
 
     rects = []
     for (r, c), count in sorted(counts.items()):
         t = count / max_count if max_count else 0
         fill = _rgb_interpolate(t)
         x = c * seg_w
-        y = r * seg_h
+        y = r * seg_h + y_offset
         rects.append(
             f'<rect x="{x}" y="{y}" width="{seg_w}" height="{seg_h}" '
             f'fill="{fill}" fill-opacity="0.6" stroke="#333" stroke-width="0.25"/>'
         )
 
     body = "\n".join(rects)
+
+    legend_title = "Reports Count"
+    # Heatmap legend (0 .. max_count), horizontal at top-center
+    legend_elems: list[str] = []
+    if max_count > 0:
+        legend_width = max(width * 0.3, 160.0)
+        legend_height = 10.0
+        legend_steps = 10
+        margin_side = 12.0
+
+        # Center legend horizontally in the top band
+        legend_x = (width - legend_width) / 2.0
+        legend_y = margin_top + 12.0  # leave room for title text above bar
+        step_w = legend_width / legend_steps
+
+        # Bounding box behind legend
+        legend_elems.append(
+            f'<rect x="{legend_x - 8}" y="{legend_y - 24}" '
+            f'width="{legend_width + 16}" height="{legend_height + 45}" '
+            f'fill="white" fill-opacity="0.9" stroke="#444" stroke-width="1" />'
+        )
+
+        # Horizontal gradient bar: left = 0, right = max_count
+        for i in range(legend_steps):
+            t = i / (legend_steps - 1) if legend_steps > 1 else 0.0
+            lx = legend_x + i * step_w
+            color = _rgb_interpolate(t)
+            legend_elems.append(
+                f'<rect x="{lx}" y="{legend_y}" width="{step_w + 0.5}" height="{legend_height}" '
+                f'fill="{color}" stroke="none" />'
+            )
+
+        # Labels under the bar
+        label_y = legend_y + legend_height + 10
+        legend_elems.append(
+            f'<text x="{legend_x}" y="{label_y}" font-size="10" '
+            f'fill="#333" dominant-baseline="hanging" font-weight="bold">0</text>'
+        )
+        legend_elems.append(
+            f'<text x="{legend_x + legend_width}" y="{label_y}" font-size="10" '
+            f'fill="#333" text-anchor="end" dominant-baseline="hanging" font-weight="bold">{max_count}</text>'
+        )
+        legend_elems.append(
+            f'<text x="{legend_x + legend_width / 2.0}" y="{legend_y - 8}" font-size="10" '
+            f'fill="#555" text-anchor="middle" dominant-baseline="alphabetic">{legend_title}</text>'
+        )
+
+    legend_svg = ""
+    if legend_elems:
+        legend_svg = "<g>" + "".join(legend_elems) + "</g>"
+
     overlay_svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {width} {height}" width="{width}" height="{height}">'
-        f'<g>{body}</g></svg>'
+        f'<g>{body}</g>{legend_svg}</svg>'
     )
 
     if include_original and image_path:
         images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
         bg_path = images_dir / image_path
         if bg_path.exists():
-            return _compose_with_background(bg_path, overlay_svg, width, height)
+            return _compose_with_background(bg_path, overlay_svg, width, height, base_height, y_offset)
 
     return overlay_svg
 
@@ -214,7 +274,7 @@ def render_intersection_svg(
         images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
         bg_path = images_dir / image_path
         if bg_path.exists():
-            return _compose_with_background(bg_path, overlay_svg, width, height)
+            return _compose_with_background(bg_path, overlay_svg, width, height, height, 0.0)
 
     return overlay_svg
 
