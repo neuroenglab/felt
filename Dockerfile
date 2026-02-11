@@ -1,15 +1,13 @@
 FROM node:22-alpine AS frontend-build
 
-# Define that we expect a token during build time
-ARG NODE_AUTH_TOKEN
-
 WORKDIR /app/frontend
 
 # Copy package files AND the .npmrc we just created
 COPY frontend/package*.json frontend/.npmrc ./
 
-# npm ci will now use the NODE_AUTH_TOKEN passed from the build command
-RUN npm ci
+# Use build secret so the token is not stored in image history (--secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN)
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
+    export NODE_AUTH_TOKEN=$(cat /run/secrets/NODE_AUTH_TOKEN) && npm ci
 
 COPY frontend/ .
 RUN npm run build
