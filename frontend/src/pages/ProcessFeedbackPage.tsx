@@ -55,7 +55,7 @@ export function ProcessFeedbackPage() {
   ];
 
   useEffect(() => {
-    fetch('/api/logs')
+    fetch('api/logs')
       .then((res) => res.json())
       .then((data: { logs: LogEntry[] }) => {
         setLogs(data.logs ?? []);
@@ -106,7 +106,7 @@ export function ProcessFeedbackPage() {
     if (!window.confirm(`Delete ${paths.length} selected log file(s) from the server? This cannot be undone.`)) return;
     setError(null);
     try {
-      const res = await fetch('/api/logs/delete', {
+      const res = await fetch('api/logs/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paths }),
@@ -114,7 +114,7 @@ export function ProcessFeedbackPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail ?? 'Delete failed');
       setSelected(new Set());
-      const next = await fetch('/api/logs').then((r) => r.json());
+      const next = await fetch('api/logs').then((r) => r.json());
       setLogs((next.logs ?? []) as LogEntry[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -140,7 +140,7 @@ export function ProcessFeedbackPage() {
       const formData = new FormData();
       arr.forEach((f) => formData.append('files', f));
 
-      const res = await fetch('/api/upload-logs', {
+      const res = await fetch('api/upload-logs', {
         method: 'POST',
         body: formData,
       });
@@ -191,7 +191,7 @@ export function ProcessFeedbackPage() {
     setResult(null);
 
     try {
-      const res = await fetch('/api/process-feedback', {
+      const res = await fetch('api/process-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filenames, k, include_original: true }),

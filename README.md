@@ -41,6 +41,46 @@ http://localhost:11055
 
 * Saved JSON logs are written into the `logging/` directory on the host.
 
+### Deploy behind reverse proxy under `/felt/`
+
+When serving FELT at `https://server/felt/`, you must configure both build-time and runtime paths.
+
+1. Build image with frontend base path:
+
+```bash
+docker build \
+  --build-arg VITE_BASE_PATH=/felt/ \
+  -t felt:subpath .
+```
+
+2. Run container with FastAPI root path:
+
+```bash
+docker run -d --rm \
+  -p 5000:5000 \
+  -e ROOT_PATH=/felt \
+  -v $(pwd)/logging:/app/logs \
+  --name felt felt:subpath
+```
+
+3. Nginx location must preserve forwarded headers and strip the prefix:
+
+```nginx
+location /felt/ {
+    proxy_pass http://127.0.0.1:5000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Prefix /felt;
+}
+```
+
+If you use `docker compose`, set:
+
+```bash
+VITE_BASE_PATH=/felt/ ROOT_PATH=/felt docker compose up --build -d
+```
+
 ### Run using *uv* and *python3*
 
 #### Steps
@@ -99,12 +139,11 @@ echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 Following command is the preferred way, since it creates manifests for both amd and arm64 architectures.
 After successful run of the command, image is already pushed to the github package repository.
 
-*Do not forget to change `<YOUR_GH_TOKEN>` (github access token) and `<version>` (e.g. 0.0.5)*
+*Do not forget to change `<version>` (e.g. 0.0.5)*
 
 ```sh
-NODE_AUTH_TOKEN=<YOUR_GH_TOKEN> docker buildx build \
+docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN \
   -t ghcr.io/neuroenglab/felt:v<version> \
   --push .
 ```

@@ -25,7 +25,7 @@ export function SvgFilePicker({ onSelect }: SvgFilePickerProps) {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/upload-image', {
+      const res = await fetch('api/upload-image', {
         method: 'POST',
         body: formData,
       });
@@ -35,7 +35,7 @@ export function SvgFilePicker({ onSelect }: SvgFilePickerProps) {
         throw new Error(data.detail ?? 'Failed to upload SVG');
       }
 
-      const imageUrl: string = data.url ?? `/uploads/${data.filename}`;
+      const imageUrl: string = data.url ?? `uploads/${data.filename}`;
       const originalName: string = data.filename ?? file.name;
 
       onSelect({ imageUrl, originalName });
