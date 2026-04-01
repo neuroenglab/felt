@@ -2,12 +2,13 @@ FROM node:22-alpine AS frontend-build
 
 WORKDIR /app/frontend
 
-# Copy package files AND the .npmrc we just created
-COPY frontend/package*.json frontend/.npmrc ./
+ARG VITE_BASE_PATH=/
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 
-# Use build secret so the token is not stored in image history (--secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN)
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
-    export NODE_AUTH_TOKEN=$(cat /run/secrets/NODE_AUTH_TOKEN) && npm ci
+# Copy package manifests.
+COPY frontend/package*.json ./
+
+RUN npm ci
 
 COPY frontend/ .
 RUN npm run build
@@ -30,6 +31,7 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 ENV LOGS_DIR=/app/logs
 ENV IMAGES_DIR=/app/uploads
+ENV ROOT_PATH=
 EXPOSE 5000
 
 CMD ["uv", "run", "main.py", "--host", "0.0.0.0", "--port", "5000", "--log-dir", "/app/logs"]

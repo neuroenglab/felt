@@ -14,7 +14,8 @@ import argparse
 from src.stability import compute_stability
 from src.visualization import render_visualizations
 
-app = FastAPI()
+ROOT_PATH = os.environ.get("ROOT_PATH", "").rstrip("/")
+app = FastAPI(root_path=ROOT_PATH)
 
 LOGS_DIR = os.environ.get("LOGS_DIR", "logs")
 IMAGES_DIR = os.environ.get(
@@ -89,7 +90,7 @@ async def upload_image(file: UploadFile = File(...)):
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Failed to store image: {e}") from e
 
-    return {"filename": safe_name, "url": f"/uploads/{safe_name}"}
+    return {"filename": safe_name, "url": f"uploads/{safe_name}"}
 
 
 @app.get("/api/images")
@@ -101,7 +102,7 @@ async def list_images():
     images = []
     for f in sorted(os.listdir(IMAGES_DIR)):
         if f.lower().endswith(".svg"):
-            images.append({"filename": f, "url": f"/uploads/{f}"})
+            images.append({"filename": f, "url": f"uploads/{f}"})
     return {"images": images}
 
 @app.get("/api/logs")
@@ -314,4 +315,12 @@ if __name__ == "__main__":
     LOGS_DIR = args.log_dir
     os.makedirs(LOGS_DIR, exist_ok=True)
 
-    uvicorn.run("main:app", host=args.host, port=args.port, log_level="info", reload=True)
+    uvicorn.run(
+        "main:app",
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        reload=True,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

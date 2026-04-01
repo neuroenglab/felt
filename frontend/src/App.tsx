@@ -23,7 +23,7 @@ function MarkSensationsPage() {
   const [availableImages, setAvailableImages] = useState<BodyImage[]>([]);
 
   const refreshImages = () => {
-    fetch('/api/images')
+    fetch('api/images')
       .then((res) => res.json())
       .then((data: { images: BodyImage[] }) => {
         setAvailableImages(data.images ?? []);
@@ -70,7 +70,7 @@ function MarkSensationsPage() {
     };
 
     try {
-      const response = await fetch('/api/save-feedback', {
+      const response = await fetch('api/save-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -140,7 +140,7 @@ function MarkSensationsPage() {
                         className="body-part-remove"
                         onClick={() => {
                           if (!window.confirm(`Delete "${img.filename}"? This cannot be undone.`)) return;
-                          fetch(`/api/images/${encodeURIComponent(img.filename)}`, { method: 'DELETE' })
+                          fetch(`api/images/${encodeURIComponent(img.filename)}`, { method: 'DELETE' })
                             .then((res) => {
                               if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d.detail ?? 'Delete failed')));
                               return res.json();
@@ -222,7 +222,7 @@ function MarkSensationsPage() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/" element={<MarkSensationsPage />} />
         <Route path="/process" element={<ProcessFeedbackPage />} />
