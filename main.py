@@ -90,7 +90,7 @@ async def upload_image(file: UploadFile = File(...)):
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Failed to store image: {e}") from e
 
-    return {"filename": safe_name, "url": f"uploads/{safe_name}"}
+    return {"filename": safe_name, "url": f"{ROOT_PATH}/uploads/{safe_name}"}
 
 
 @app.get("/api/images")
@@ -102,7 +102,7 @@ async def list_images():
     images = []
     for f in sorted(os.listdir(IMAGES_DIR)):
         if f.lower().endswith(".svg"):
-            images.append({"filename": f, "url": f"uploads/{f}"})
+            images.append({"filename": f, "url": f"{ROOT_PATH}/uploads/{f}"})
     return {"images": images}
 
 @app.get("/api/logs")

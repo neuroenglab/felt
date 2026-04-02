@@ -144,6 +144,7 @@ After successful run of the command, image is already pushed to the github packa
 ```sh
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
+  --build-arg VITE_BASE_PATH=/felt/ \
   -t ghcr.io/neuroenglab/felt:v<version> \
   --push .
 ```

@@ -289,7 +289,8 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> 
 
     if include_original and image_path:
         images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
-        bg_path = images_dir / image_path
+        filename = Path(image_path).name
+        bg_path = images_dir / filename
         if bg_path.exists():
             return _compose_with_background(bg_path, overlay_svg, width, height, base_height, y_offset)
 
@@ -335,7 +336,8 @@ def render_intersection_svg(
 
     if include_original and image_path:
         images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
-        bg_path = images_dir / image_path
+        filename = Path(image_path).name
+        bg_path = images_dir / filename
         if bg_path.exists():
             return _compose_with_background(bg_path, overlay_svg, width, height, height, 0.0)
 
