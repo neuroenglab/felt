@@ -51,6 +51,7 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
 }) => {
     const imgRef = useRef<HTMLImageElement>(null);
     const [boundary, setBoundary] = useState<{ width: number; height: number } | null>(null);
+    const [eraseMode, setEraseMode] = useState(false);
     const isDrawingRef = useRef(false);
     const isErasingRef = useRef(false);
     const maskDataRef = useRef<Uint8Array | null>(null);
@@ -147,7 +148,7 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
         return out.length > 0 ? out : [{ row: centerRow, col: centerCol }];
     }, [brushRadiusCells, rows, cols]);
 
-    const handleAction = useCallback((e: React.MouseEvent, erase: boolean) => {
+    const handleAction = useCallback((e: React.PointerEvent, erase: boolean) => {
         const el = imgRef.current;
         if (!el || !currentBoundary) return;
         const rect = el.getBoundingClientRect();
@@ -217,6 +218,30 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                 />
                 <label style={{ display: "block", marginTop: "0.5rem" }}>Brush Size: {brushRadiusCells + 1}</label>
                 <input type="range" min="0" max="5" value={brushRadiusCells} onChange={(e) => setBrushRadiusCells(Number(e.target.value))} />
+
+                {/* Touch devices have no right mouse button, so erase needs an
+                    explicit mode toggle to be reachable at all. */}
+                <button
+                    type="button"
+                    onClick={() => setEraseMode((v) => !v)}
+                    aria-pressed={eraseMode}
+                    style={{
+                        display: "block",
+                        marginTop: "0.75rem",
+                        padding: "0.6rem 1rem",
+                        minHeight: "44px",
+                        fontSize: "1rem",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        touchAction: "manipulation",
+                        border: eraseMode ? "2px solid #c0392b" : "2px solid #bbb",
+                        background: eraseMode ? "#fdecea" : "#fff",
+                        color: eraseMode ? "#c0392b" : "#333",
+                        fontWeight: eraseMode ? 700 : 400
+                    }}
+                >
+                    {eraseMode ? "Erasing" : "Drawing"}
+                </button>
             </div>
 
             <div style={{ position: "relative", display: "inline-block", userSelect: "none" }}>
@@ -234,20 +259,46 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                             gridTemplateRows: `repeat(${rows}, 1fr)`,
                             gridTemplateColumns: `repeat(${cols}, 1fr)`,
                             cursor: "crosshair",
-                            pointerEvents: "auto"
+                            pointerEvents: "auto",
+                            // Stop the browser claiming drags as scroll/zoom gestures.
+                            // Without this a touch or Pencil stroke pans the page
+                            // instead of painting.
+                            touchAction: "none",
+                            WebkitUserSelect: "none",
+                            WebkitTouchCallout: "none"
                         }}
-                        onMouseDown={(e) => {
-                            if (e.button === 0) { isDrawingRef.current = true; handleAction(e, false); }
-                            else if (e.button === 2) { isErasingRef.current = true; handleAction(e, true); }
+                        onPointerDown={(e) => {
+                            // Route all input types (mouse, touch, pen) through one path.
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            // Right button, or the Pencil's barrel button, erases;
+                            // on touch devices the eraseMode toggle is the only way.
+                            const erase = eraseMode || e.button === 2 || e.button === 5;
+                            if (erase) { isErasingRef.current = true; handleAction(e, true); }
+                            else { isDrawingRef.current = true; handleAction(e, false); }
                         }}
-                        onMouseMove={(e) => {
+                        onPointerMove={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
                             setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
                             if (isDrawingRef.current) handleAction(e, false);
                             else if (isErasingRef.current) handleAction(e, true);
                         }}
-                        onMouseUp={(e) => { if (e.button === 0) isDrawingRef.current = false; if (e.button === 2) isErasingRef.current = false; }}
-                        onMouseLeave={() => { isDrawingRef.current = false; isErasingRef.current = false; setCursorPos(null); }}
+                        onPointerUp={(e) => {
+                            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                            }
+                            isDrawingRef.current = false;
+                            isErasingRef.current = false;
+                        }}
+                        onPointerCancel={() => { isDrawingRef.current = false; isErasingRef.current = false; }}
+                        onPointerLeave={(e) => {
+                            // A captured pen/touch stroke keeps painting outside the
+                            // grid; only clear the hover cursor for a real mouse exit.
+                            if (e.pointerType === "mouse") {
+                                isDrawingRef.current = false;
+                                isErasingRef.current = false;
+                            }
+                            setCursorPos(null);
+                        }}
                         onContextMenu={(e) => e.preventDefault()}
                     >
                         {/* Cursor Overlay */}

@@ -287,6 +287,64 @@ async def serve_spa(full_path: str):
         return FileResponse(index_file)
     return {"detail": "Frontend not built (npm run build)"}
 
+#########################################################
+###################### Launch helpers ###################
+#########################################################
+
+def _find_tailscale_ip() -> str:
+    """Return this machine's Tailscale IPv4, or raise SystemExit with advice."""
+    import shutil
+    import subprocess
+
+    candidates = [
+        shutil.which("tailscale"),
+        os.path.join(os.environ.get("ProgramFiles", ""), "Tailscale", "tailscale.exe"),
+        "/usr/bin/tailscale",
+        "/usr/local/bin/tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ]
+    exe = next((c for c in candidates if c and os.path.exists(c)), None)
+    if exe is None:
+        raise SystemExit(
+            "--tailscale: could not find the tailscale binary. "
+            "Install it, or pass --host <ip> explicitly."
+        )
+
+    try:
+        out = subprocess.run(
+            [exe, "ip", "-4"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        raise SystemExit(f"--tailscale: could not run tailscale: {e}") from e
+
+    ip = out.stdout.strip().splitlines()
+    if out.returncode != 0 or not ip:
+        raise SystemExit(
+            "--tailscale: no Tailscale IP. Is Tailscale running and logged in? "
+            f"({(out.stderr or out.stdout).strip()})"
+        )
+    return ip[0].strip()
+
+
+def _build_frontend() -> None:
+    """Run `npm run build` so FastAPI serves a current SPA bundle."""
+    import shutil
+    import subprocess
+
+    # On Windows the bare "npm" on PATH is a shell script that CreateProcess
+    # cannot execute; npm.cmd is the real entry point.
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if npm is None:
+        raise SystemExit("--build: npm not found on PATH.")
+
+    frontend_dir = Path(__file__).resolve().parent / "frontend"
+    print("Building frontend...", flush=True)
+    result = subprocess.run([npm, "run", "build"], cwd=str(frontend_dir))
+    if result.returncode != 0:
+        raise SystemExit("--build: frontend build failed (see output above).")
+    print("Frontend build complete." + "\n", flush=True)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run perception feedback app")
 
@@ -308,16 +366,35 @@ if __name__ == "__main__":
         default=5000,
         help="Port to bind the server to",
     )
+    parser.add_argument(
+        "--tailscale",
+        action="store_true",
+        help="Bind to this machine's Tailscale IP so tablets on the tailnet can "
+             "reach it (without exposing the app on any other network)",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="Run `npm run build` before starting, so the served SPA is current",
+    )
 
     args = parser.parse_args()
+
+    if args.build:
+        _build_frontend()
+
+    host = _find_tailscale_ip() if args.tailscale else args.host
 
     os.environ["LOGS_DIR"] = args.log_dir
     LOGS_DIR = args.log_dir
     os.makedirs(LOGS_DIR, exist_ok=True)
 
+    print(f"\n  FELT serving on  http://{host}:{args.port}")
+    print(f"  Logs are written to  {os.path.abspath(LOGS_DIR)}\n", flush=True)
+
     uvicorn.run(
         "main:app",
-        host=args.host,
+        host=host,
         port=args.port,
         log_level="info",
         reload=True,
