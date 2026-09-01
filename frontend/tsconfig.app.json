@@ -22,7 +22,20 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    /* Resolve the library to vendored source, matching the vite alias */
+    "baseUrl": ".",
+    "paths": {
+      "@neuroenglab/nel-feedback-ui": ["./feedback-locator/src/index.ts"]
+    }
   },
-  "include": ["src"]
+  /* Only the library entry points: the locator's own App.tsx/main.tsx are its
+     standalone dev harness and are not built as part of FELT. */
+  "include": [
+    "src",
+    "feedback-locator/src/index.ts",
+    "feedback-locator/src/FeedbackLocator.tsx",
+    "feedback-locator/src/BodyPartSelector.tsx"
+  ]
 }

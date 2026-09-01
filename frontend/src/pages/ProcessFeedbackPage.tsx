@@ -422,7 +422,7 @@ export function ProcessFeedbackPage() {
                       </div>
                       <div
                         className="visualization-svg"
-                        // eslint-disable-next-line react/no-danger
+                        // Rendered SVG comes from our own backend visualization output.
                         dangerouslySetInnerHTML={{ __html: result.heatmap_svg }}
                       />
                       <button
@@ -462,7 +462,7 @@ export function ProcessFeedbackPage() {
                       </div>
                       <div
                         className="visualization-svg"
-                        // eslint-disable-next-line react/no-danger
+                        // Rendered SVG comes from our own backend visualization output.
                         dangerouslySetInnerHTML={{ __html: result.intersection_svg }}
                       />
                       <button
