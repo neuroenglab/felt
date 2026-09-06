@@ -10,7 +10,8 @@ import {
 import { HandChoice } from './components/HandChoice';
 import { SvgFilePicker } from './components/SvgFilePicker';
 import { TrialBanner } from './components/TrialBanner';
-import { handImageName, trialBanner, useTrial } from './hooks/useTrial';
+import { trialBanner, useTrial } from './hooks/useTrial';
+import { handImage, type HandImage } from './hands';
 import { ProcessFeedbackPage } from './pages/ProcessFeedbackPage';
 
 type BodyImage = {
@@ -25,6 +26,32 @@ type ConsoleAnswer = {
   problem: string | null;
   reason: string | null;
 };
+
+/** The answer of `POST /api/save-feedback`. */
+type SaveAnswer = {
+  filename: string;
+  console?: ConsoleAnswer;
+};
+
+function isConsoleAnswer(value: unknown): value is ConsoleAnswer {
+  if (typeof value !== 'object' || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  const isText = (text: unknown) => text === null || text === undefined || typeof text === 'string';
+  return (
+    typeof fields.accepted === 'boolean' &&
+    Array.isArray(fields.regions) &&
+    fields.regions.every((region) => typeof region === 'string') &&
+    isText(fields.problem) &&
+    isText(fields.reason)
+  );
+}
+
+function isSaveAnswer(value: unknown): value is SaveAnswer {
+  if (typeof value !== 'object' || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  if (typeof fields.filename !== 'string') return false;
+  return fields.console === undefined || isConsoleAnswer(fields.console);
+}
 
 function MarkSensationsPage() {
   const [feedbackLocation, setFeedbackLocation] = useState<SensationLocation | undefined>(undefined);
@@ -42,8 +69,15 @@ function MarkSensationsPage() {
   const inSequence = linked && !manual;
   // Without the console link the page draws and exports as it always did.
   const canDraw = !linked || trial?.can_draw === true;
+  const hand = trial?.hand ?? null;
   const trialId = trial?.trial_id ?? null;
-  const handPicked = useRef(false);
+  // The sequence the console runs now, and the trial inside it.
+  const sequenceKey =
+    inSequence && trial?.reachable
+      ? `${trial.subject_code ?? ''}/${trial.sequence_id ?? ''}`
+      : null;
+  const trialKey = `${trial?.subject_code ?? ''}/${trial?.sequence_id ?? ''}/${trialId ?? ''}`;
+  const pickedSequence = useRef<string | null>(null);
 
   const refreshImages = () => {
     fetch('api/images')
@@ -54,36 +88,33 @@ function MarkSensationsPage() {
       .catch((err) => console.error('Failed to load body images', err));
   };
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = (message: string, type: 'success' | 'error' = 'success', ms = 2000) => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000); // Disappears after 3000ms
+    setTimeout(() => setToast(null), ms); // Disappears after 2000ms by default
   };
 
   useEffect(() => {
     refreshImages();
   }, []);
 
-  // The console names the hand of the session, so the page opens on its image.
+  // The console owns the hand of a sequence, so a new sequence opens on its
+  // image. Inside a sequence the subject keeps the image it chose.
   useEffect(() => {
-    if (handPicked.current || !linked || customSvg || availableImages.length === 0) return;
-    const wanted = handImageName(
-      trial?.hand,
-      availableImages.map((img) => img.filename),
-    );
-    const image = availableImages.find((img) => img.filename === wanted);
+    if (!sequenceKey || sequenceKey === pickedSequence.current) return;
+    const image = handImage(hand);
     if (!image) return;
-    handPicked.current = true;
+    pickedSequence.current = sequenceKey;
     setCustomSvg(image.url);
     setSelectedImageName(image.filename);
     setFeedbackLocation(undefined);
-  }, [linked, customSvg, availableImages, trial?.hand]);
+  }, [sequenceKey, hand]);
 
   // The painting of a trial stays on the screen until the trial changes.
   useEffect(() => {
     setFeedbackLocation((prev) => (prev ? { ...prev, chosenPoints: { row: [], col: [] } } : prev));
-  }, [trialId]);
+  }, [trialKey]);
 
-  const pickImage = (image: BodyImage) => {
+  const pickImage = (image: BodyImage | HandImage) => {
     setCustomSvg(image.url);
     setSelectedImageName(image.filename);
     setFeedbackLocation(undefined);
@@ -130,7 +161,8 @@ function MarkSensationsPage() {
 
       if (!response.ok) throw new Error('Failed to save');
 
-      const result = await response.json();
+      const result: unknown = await response.json();
+      if (!isSaveAnswer(result)) throw new Error('The service answered an unknown shape');
       // Clear current drawing after successful save
       setFeedbackLocation({
         ...feedbackLocation,
@@ -191,15 +223,20 @@ function MarkSensationsPage() {
       });
       if (!response.ok) throw new Error('Failed to save');
 
-      const result: { filename: string; console?: ConsoleAnswer } = await response.json();
+      const result: unknown = await response.json();
+      if (!isSaveAnswer(result)) throw new Error('The service answered an unknown shape');
       const answer = result.console;
       if (answer && answer.accepted && !answer.problem) {
         const regions = answer.regions.length > 0 ? answer.regions.join(', ') : 'no region';
-        showToast(`Sent for trial ${trial.trial_id}: ${regions}`);
+        showToast(`Sent for trial ${trial.trial_id}: ${regions}`, 'success', 3000);
       } else if (answer) {
-        showToast(answer.problem ?? answer.reason ?? 'The console refused the painting', 'error');
+        showToast(
+          answer.problem ?? answer.reason ?? 'The console refused the painting',
+          'error',
+          3000,
+        );
       } else {
-        showToast(`Saved ${result.filename}`);
+        showToast(`Saved ${result.filename}`, 'success', 3000);
       }
     } catch (err) {
       console.error(err);
@@ -230,11 +267,7 @@ function MarkSensationsPage() {
             {inSequence ? (
               <>
                 <p className="panel-description">Choose the hand of the session.</p>
-                <HandChoice
-                  images={availableImages}
-                  selected={selectedImageName}
-                  onPick={pickImage}
-                />
+                <HandChoice selected={selectedImageName} onPick={pickImage} />
               </>
             ) : (
               <>
@@ -313,11 +346,7 @@ function MarkSensationsPage() {
               <div className="panel-actions">
                 {inSequence ? (
                   <>
-                    <HandChoice
-                      images={availableImages}
-                      selected={selectedImageName}
-                      onPick={pickImage}
-                    />
+                    <HandChoice selected={selectedImageName} onPick={pickImage} />
                     <button
                       type="button"
                       className="secondary-button"

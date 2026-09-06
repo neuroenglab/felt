@@ -20,40 +20,87 @@ export type TrialInfo = {
   can_draw?: boolean;
 };
 
+const isText = (value: unknown): boolean =>
+  value === undefined || value === null || typeof value === 'string';
+
+const isFlag = (value: unknown): boolean => value === undefined || typeof value === 'boolean';
+
+const isCount = (value: unknown): boolean =>
+  value === undefined || value === null || typeof value === 'number';
+
+/** True when the answer carries the fields the page reads, with their types. */
+function isTrialInfo(value: unknown): value is TrialInfo {
+  if (typeof value !== 'object' || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  if (typeof fields.linked !== 'boolean') return false;
+  if (!fields.linked) return true;
+  return (
+    isFlag(fields.reachable) &&
+    isText(fields.state) &&
+    isText(fields.subject_code) &&
+    isText(fields.sequence_id) &&
+    isText(fields.trial_id) &&
+    isCount(fields.pass_index) &&
+    isFlag(fields.trial_saved) &&
+    isFlag(fields.felt_answered) &&
+    isText(fields.hand) &&
+    isFlag(fields.manual) &&
+    isFlag(fields.can_draw)
+  );
+}
+
 /**
  * Read the trial of the console once per interval.
  *
- * Null until the first answer arrives, so the page shows no banner before it
- * knows whether FELT is linked.
+ * Null until the first good answer arrives, so the page shows no banner before
+ * it knows whether FELT is linked. A late, failed or malformed answer never
+ * unlinks a page that was linked; it reports the console as not reachable, and
+ * the page locks the drawing surface.
  */
 export function useTrial(intervalMs = 1000): TrialInfo | null {
   const [trial, setTrial] = useState<TrialInfo | null>(null);
 
   useEffect(() => {
     let stopped = false;
+    // A slow answer must not overwrite a newer one.
+    let generation = 0;
+    const inFlight = new Set<AbortController>();
 
-    const read = () => {
-      fetch('api/trial')
-        .then((res) => res.json())
-        .then((data: TrialInfo) => {
-          if (!stopped) setTrial(data);
-        })
-        .catch(() => {
-          // The FELT service itself did not answer. Keep what we know, and
-          // report the link as down so the page locks the drawing surface.
-          if (!stopped) {
-            setTrial((prev) =>
-              prev && prev.linked ? { ...prev, reachable: false, can_draw: false } : prev,
-            );
-          }
-        });
+    const reportDown = () => {
+      setTrial((prev) =>
+        prev && prev.linked ? { ...prev, reachable: false, can_draw: false } : prev,
+      );
     };
 
-    read();
-    const timer = window.setInterval(read, intervalMs);
+    const read = async () => {
+      const mine = ++generation;
+      const controller = new AbortController();
+      inFlight.add(controller);
+      try {
+        const response = await fetch('api/trial', { signal: controller.signal });
+        if (!response.ok) throw new Error(`api/trial answered ${response.status}`);
+        const data: unknown = await response.json();
+        if (stopped || mine !== generation) return;
+        if (isTrialInfo(data)) {
+          setTrial(data);
+        } else {
+          reportDown();
+        }
+      } catch {
+        if (stopped || mine !== generation) return;
+        reportDown();
+      } finally {
+        inFlight.delete(controller);
+      }
+    };
+
+    void read();
+    const timer = window.setInterval(() => void read(), intervalMs);
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      inFlight.forEach((controller) => controller.abort());
+      inFlight.clear();
     };
   }, [intervalMs]);
 
@@ -91,11 +138,4 @@ export function isOtherHand(trial: TrialInfo, imageName: string | null): boolean
   const other = hand === 'left' ? 'right' : 'left';
   const name = imageName.toLowerCase();
   return name.includes(other) && !name.includes(hand);
-}
-
-/** The uploaded image of the console hand, by the `hand-{hand}-` name rule. */
-export function handImageName(hand: string | null | undefined, names: string[]): string | null {
-  if (!hand) return null;
-  const prefix = `hand-${hand.toLowerCase()}-`;
-  return names.find((name) => name.toLowerCase().startsWith(prefix)) ?? null;
 }
