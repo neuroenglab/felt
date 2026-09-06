@@ -53,6 +53,19 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
     const [boundary, setBoundary] = useState<{ width: number; height: number } | null>(null);
     const [eraseMode, setEraseMode] = useState(false);
     const isDrawingRef = useRef(false);
+    // Two-finger-tap gesture bookkeeping (Safari exposes no Pencil double-tap).
+    const activePointersRef = useRef<Set<number>>(new Set());
+    const firstDownAtRef = useRef(0);
+    const strokeStartRef = useRef<ChosenPointsDict | null>(null);
+    const gestureRef = useRef(false);
+    // Fingers land one at a time, so a 3-finger tap passes through 2 on the way.
+    // Resolve the gesture on the highest count seen inside a settle window.
+    const maxTouchesRef = useRef(0);
+    const gestureTimerRef = useRef<number | null>(null);
+    // Undo/redo stacks of whole chosenPoints snapshots.
+    const historyRef = useRef<ChosenPointsDict[]>([]);
+    const redoRef = useRef<ChosenPointsDict[]>([]);
+    const pointsRef = useRef<ChosenPointsDict>({ row: [], col: [] });
     const isErasingRef = useRef(false);
     const maskDataRef = useRef<Uint8Array | null>(null);
     const maskSizeRef = useRef({ w: 0, h: 0 });
@@ -71,6 +84,8 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
     const { rows, cols } = currentBoundary
         ? getGridFromCoarseness(coarsenessPercent, currentBoundary.width, currentBoundary.height)
         : { rows: 1, cols: 1 };
+
+    useEffect(() => { pointsRef.current = chosenPoints; }, [chosenPoints]);
 
     // --- Original Logic: Mask Building ---
     const buildMask = useCallback(() => {
@@ -190,6 +205,39 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
         });
     }, [currentBoundary, chosenPoints, pixelToCell, isPointInsideHand, getCellsInBrush, rows, cols, imageSrc, coarsenessPercent, onUpdate]);
 
+    const snapshot = (p: ChosenPointsDict): ChosenPointsDict => ({ row: [...p.row], col: [...p.col] });
+
+    const commitPoints = useCallback((points: ChosenPointsDict) => {
+        if (!currentBoundary) return;
+        onUpdate({
+            image_path: imageSrc,
+            image_size: { w: currentBoundary.width, h: currentBoundary.height },
+            segment_size_px: { w: currentBoundary.width / cols, h: currentBoundary.height / rows },
+            coarsenessPercent,
+            chosenPoints: points
+        });
+    }, [currentBoundary, cols, rows, imageSrc, coarsenessPercent, onUpdate]);
+
+    const pushHistory = useCallback((before: ChosenPointsDict) => {
+        historyRef.current.push(snapshot(before));
+        if (historyRef.current.length > 100) historyRef.current.shift();
+        redoRef.current = [];
+    }, []);
+
+    const doUndo = useCallback((current: ChosenPointsDict) => {
+        const prev = historyRef.current.pop();
+        if (!prev) return;
+        redoRef.current.push(snapshot(current));
+        commitPoints(prev);
+    }, [commitPoints]);
+
+    const doRedo = useCallback((current: ChosenPointsDict) => {
+        const next = redoRef.current.pop();
+        if (!next) return;
+        historyRef.current.push(snapshot(current));
+        commitPoints(next);
+    }, [commitPoints]);
+
     const isChosen = useCallback((row: number, col: number) => {
         for (let i = 0; i < chosenPoints.row.length; i++) {
             if (chosenPoints.row[i] === row && chosenPoints.col[i] === col) return true;
@@ -242,6 +290,59 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                 >
                     {eraseMode ? "Erasing" : "Drawing"}
                 </button>
+                <div style={{ fontSize: "0.8rem", color: "#666", marginTop: "0.35rem", lineHeight: 1.5 }}>
+                    On a tablet: two-finger tap toggles the eraser,
+                    three-finger tap undoes, four-finger tap redoes.
+                </div>
+
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                    <button
+                        type="button"
+                        onClick={() => doUndo(pointsRef.current)}
+                        style={{
+                            flex: 1, padding: "0.6rem 1rem", minHeight: "44px",
+                            fontSize: "1rem", borderRadius: "8px", cursor: "pointer",
+                            touchAction: "manipulation", border: "2px solid #bbb", background: "#fff"
+                        }}
+                    >
+                        Undo
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => doRedo(pointsRef.current)}
+                        style={{
+                            flex: 1, padding: "0.6rem 1rem", minHeight: "44px",
+                            fontSize: "1rem", borderRadius: "8px", cursor: "pointer",
+                            touchAction: "manipulation", border: "2px solid #bbb", background: "#fff"
+                        }}
+                    >
+                        Redo
+                    </button>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={() => {
+                        pushHistory(pointsRef.current);
+                        commitPoints({ row: [], col: [] });
+                    }}
+                    disabled={chosenPoints.row.length === 0}
+                    style={{
+                        display: "block",
+                        marginTop: "0.5rem",
+                        padding: "0.6rem 1rem",
+                        minHeight: "44px",
+                        fontSize: "1rem",
+                        borderRadius: "8px",
+                        cursor: chosenPoints.row.length === 0 ? "default" : "pointer",
+                        touchAction: "manipulation",
+                        border: "2px solid #bbb",
+                        background: "#fff",
+                        color: chosenPoints.row.length === 0 ? "#aaa" : "#333"
+                    }}
+                >
+                    Clear all
+                </button>
             </div>
 
             <div style={{ position: "relative", display: "inline-block", userSelect: "none" }}>
@@ -268,6 +369,52 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                             WebkitTouchCallout: "none"
                         }}
                         onPointerDown={(e) => {
+                            activePointersRef.current.add(e.pointerId);
+
+                            // Multi-finger taps: 2 = eraser toggle, 3 = undo, 4 = redo.
+                            // Safari exposes no Apple Pencil double-tap, so finger
+                            // gestures stand in; the Pencil keeps drawing untouched.
+                            if (
+                                e.pointerType === "touch" &&
+                                activePointersRef.current.size >= 2 &&
+                                Date.now() - firstDownAtRef.current < 400
+                            ) {
+                                gestureRef.current = true;
+                                isDrawingRef.current = false;
+                                isErasingRef.current = false;
+                                // Undo whatever the first finger painted on its way in.
+                                const base = strokeStartRef.current;
+                                if (base) commitPoints(base);
+
+                                maxTouchesRef.current = Math.max(
+                                    maxTouchesRef.current,
+                                    activePointersRef.current.size
+                                );
+                                if (gestureTimerRef.current !== null) {
+                                    clearTimeout(gestureTimerRef.current);
+                                }
+                                gestureTimerRef.current = window.setTimeout(() => {
+                                    const n = maxTouchesRef.current;
+                                    maxTouchesRef.current = 0;
+                                    gestureTimerRef.current = null;
+                                    const current = base ?? pointsRef.current;
+                                    if (n === 2) setEraseMode((v) => !v);
+                                    else if (n === 3) doUndo(current);
+                                    else if (n >= 4) doRedo(current);
+                                }, 180);
+                                return;
+                            }
+                            if (gestureRef.current) return;
+
+                            if (activePointersRef.current.size === 1) {
+                                firstDownAtRef.current = Date.now();
+                                // Snapshot so the gesture above can revert a stray mark.
+                                strokeStartRef.current = {
+                                    row: [...chosenPoints.row],
+                                    col: [...chosenPoints.col]
+                                };
+                            }
+
                             // Route all input types (mouse, touch, pen) through one path.
                             e.currentTarget.setPointerCapture(e.pointerId);
                             // Right button, or the Pencil's barrel button, erases;
@@ -277,6 +424,7 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                             else { isDrawingRef.current = true; handleAction(e, false); }
                         }}
                         onPointerMove={(e) => {
+                            if (gestureRef.current) return;
                             const rect = e.currentTarget.getBoundingClientRect();
                             setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
                             if (isDrawingRef.current) handleAction(e, false);
@@ -286,10 +434,21 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                             if (e.currentTarget.hasPointerCapture(e.pointerId)) {
                                 e.currentTarget.releasePointerCapture(e.pointerId);
                             }
+                            activePointersRef.current.delete(e.pointerId);
+                            if (activePointersRef.current.size === 0) gestureRef.current = false;
+                            // A completed stroke becomes one undo step.
+                            if ((isDrawingRef.current || isErasingRef.current) && strokeStartRef.current) {
+                                pushHistory(strokeStartRef.current);
+                            }
                             isDrawingRef.current = false;
                             isErasingRef.current = false;
                         }}
-                        onPointerCancel={() => { isDrawingRef.current = false; isErasingRef.current = false; }}
+                        onPointerCancel={(e) => {
+                            activePointersRef.current.delete(e.pointerId);
+                            if (activePointersRef.current.size === 0) gestureRef.current = false;
+                            isDrawingRef.current = false;
+                            isErasingRef.current = false;
+                        }}
                         onPointerLeave={(e) => {
                             // A captured pen/touch stroke keeps painting outside the
                             // grid; only clear the hover cursor for a real mouse exit.
