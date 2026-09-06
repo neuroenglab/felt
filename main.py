@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 import argparse
 
+from src.console import ConsoleLink
 from src.stability import compute_stability
 from src.visualization import render_visualizations
 
@@ -25,6 +26,20 @@ IMAGES_DIR = os.environ.get(
 os.makedirs(IMAGES_DIR, exist_ok=True)
 # Ensure visualization module sees the same uploads directory
 os.environ["IMAGES_DIR"] = IMAGES_DIR
+
+# The calibration console FELT talks to. Empty means not linked, and FELT
+# works on its own as before. The --console-url option writes the variable
+# before the server starts, so the reloader's child process sees it too.
+_console_link = ConsoleLink(os.environ.get("CONSOLE_URL", ""))
+
+
+def console_link() -> ConsoleLink:
+    """The link for the configured address, rebuilt when the address changes."""
+    global _console_link
+    url = os.environ.get("CONSOLE_URL", "").strip().rstrip("/")
+    if _console_link.base_url != url:
+        _console_link = ConsoleLink(url)
+    return _console_link
 
 #########################################################
 ################## Serve API Endpoints ##################
@@ -227,10 +242,32 @@ async def process_feedback(data: ProcessFeedbackRequest):
     }
     return response
 
+@app.get("/api/trial")
+async def read_trial():
+    """The trial the console scores, for the trial banner of the page."""
+    return console_link().trial()
+
+
+class TrialRef(BaseModel):
+    """The trial a painting scores (data dictionary section 4.6)."""
+    subject_code: str
+    sequence_id: str
+    trial_id: str
+
+
 class FeedbackLog(BaseModel):
     log_id: str
     filename: str
     feedbackLocation: Dict[str, Any]
+    # Present only when FELT is linked to a console.
+    trial: TrialRef | None = None
+    felt: bool | None = None
+
+
+def _safe_name(text: str) -> str:
+    """A file name part without a separator."""
+    return "".join(c if c.isalnum() or c in "._-" else "_" for c in text)
+
 
 @app.post("/api/save-feedback")
 async def save_feedback(log_data: FeedbackLog):
@@ -238,17 +275,32 @@ async def save_feedback(log_data: FeedbackLog):
         os.makedirs(LOGS_DIR, exist_ok=True)
         # Create a unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = log_data.log_id + "_" + log_data.filename.replace(".svg", "_svg") + "_" + timestamp + ".json"
+        # The same export time goes into the file and into the request, so the
+        # console counts a painting once when it also reads the folder.
+        exported_at = datetime.now().astimezone().isoformat()
+        if log_data.trial is not None:
+            stem = _safe_name(f"{log_data.trial.subject_code}_{log_data.trial.trial_id}")
+        else:
+            stem = log_data.log_id
+        filename = stem + "_" + log_data.filename.replace(".svg", "_svg") + "_" + timestamp + ".json"
         file_path = os.path.join(LOGS_DIR, filename)
 
         payload = log_data.model_dump()
         payload["log_id"] = log_data.log_id
-        payload["feedbackLocation"]["exported_at"] = timestamp
+        payload["feedbackLocation"]["exported_at"] = exported_at
+        # A FELT without the console link writes the file it always wrote.
+        for field in ("trial", "felt"):
+            if payload.get(field) is None:
+                payload.pop(field, None)
 
         with open(file_path, "w") as f:
             json.dump(payload, f, indent=2)
 
-        return {"status": "success", "filename": filename}
+        response: Dict[str, Any] = {"status": "success", "filename": filename}
+        link = console_link()
+        if link.linked and log_data.trial is not None:
+            response["console"] = link.send_felt(payload)
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -377,6 +429,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Run `npm run build` before starting, so the served SPA is current",
     )
+    parser.add_argument(
+        "--console-url",
+        type=str,
+        default="",
+        help="Address of the calibration console, for example "
+             "http://127.0.0.1:8000. It overrides the CONSOLE_URL "
+             "variable; without either, FELT runs unlinked",
+    )
 
     args = parser.parse_args()
 
@@ -389,8 +449,14 @@ if __name__ == "__main__":
     LOGS_DIR = args.log_dir
     os.makedirs(LOGS_DIR, exist_ok=True)
 
+    # The option wins over the variable, and the variable carries the
+    # address to the reloader child process, which serves the app.
+    console_url = (args.console_url or os.environ.get("CONSOLE_URL", "")).strip()
+    os.environ["CONSOLE_URL"] = console_url
+
     print(f"\n  FELT serving on  http://{host}:{args.port}")
-    print(f"  Logs are written to  {os.path.abspath(LOGS_DIR)}\n", flush=True)
+    print(f"  Logs are written to  {os.path.abspath(LOGS_DIR)}")
+    print(f"  Console link  {console_url or 'none (unlinked)'}\n", flush=True)
 
     uvicorn.run(
         "main:app",
