@@ -79,10 +79,14 @@ class ConsoleLink:
                 "trial_saved": False,
                 "felt_answered": False,
                 "hand": None,
+                "manual": False,
                 "can_draw": False,
             }
         state = status.get("state")
         trial_saved = bool(status.get("trial_saved"))
+        # No sequence runs: the page draws and exports on its own, as an
+        # unlinked FELT does.
+        manual = state == "IDLE"
         return {
             "linked": True,
             "reachable": True,
@@ -95,8 +99,10 @@ class ConsoleLink:
             "trial_saved": trial_saved,
             "felt_answered": bool(status.get("felt_answered")),
             "hand": status.get("hand"),
-            # The subject draws in SCORING only, and only before Save.
-            "can_draw": state == "SCORING" and not trial_saved,
+            "manual": manual,
+            # While a sequence runs the subject draws in SCORING only, and
+            # only before Save.
+            "can_draw": manual or (state == "SCORING" and not trial_saved),
         }
 
     def send_felt(self, payload: dict[str, Any]) -> dict[str, Any]:
