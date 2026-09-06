@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 
@@ -7,12 +7,23 @@ import {
   type SensationLocation,
 } from '@neuroenglab/nel-feedback-ui';
 
+import { HandChoice } from './components/HandChoice';
 import { SvgFilePicker } from './components/SvgFilePicker';
+import { TrialBanner } from './components/TrialBanner';
+import { handImageName, trialBanner, useTrial } from './hooks/useTrial';
 import { ProcessFeedbackPage } from './pages/ProcessFeedbackPage';
 
 type BodyImage = {
   filename: string;
   url: string;
+};
+
+/** What the console answered to a sent painting, through the FELT service. */
+type ConsoleAnswer = {
+  accepted: boolean;
+  regions: string[];
+  problem: string | null;
+  reason: string | null;
 };
 
 function MarkSensationsPage() {
@@ -21,6 +32,18 @@ function MarkSensationsPage() {
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [availableImages, setAvailableImages] = useState<BodyImage[]>([]);
+  const [sending, setSending] = useState(false);
+
+  const trial = useTrial(1000);
+  const linked = trial?.linked === true;
+  // No sequence runs: the linked page behaves as the unlinked one.
+  const manual = linked && trial?.manual === true;
+  // A sequence runs, so the console owns the hand, the drawing and the send.
+  const inSequence = linked && !manual;
+  // Without the console link the page draws and exports as it always did.
+  const canDraw = !linked || trial?.can_draw === true;
+  const trialId = trial?.trial_id ?? null;
+  const handPicked = useRef(false);
 
   const refreshImages = () => {
     fetch('api/images')
@@ -33,12 +56,43 @@ function MarkSensationsPage() {
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 2000); // Disappears after 2000ms
+    setTimeout(() => setToast(null), 3000); // Disappears after 3000ms
   };
 
   useEffect(() => {
     refreshImages();
   }, []);
+
+  // The console names the hand of the session, so the page opens on its image.
+  useEffect(() => {
+    if (handPicked.current || !linked || customSvg || availableImages.length === 0) return;
+    const wanted = handImageName(
+      trial?.hand,
+      availableImages.map((img) => img.filename),
+    );
+    const image = availableImages.find((img) => img.filename === wanted);
+    if (!image) return;
+    handPicked.current = true;
+    setCustomSvg(image.url);
+    setSelectedImageName(image.filename);
+    setFeedbackLocation(undefined);
+  }, [linked, customSvg, availableImages, trial?.hand]);
+
+  // The painting of a trial stays on the screen until the trial changes.
+  useEffect(() => {
+    setFeedbackLocation((prev) => (prev ? { ...prev, chosenPoints: { row: [], col: [] } } : prev));
+  }, [trialId]);
+
+  const pickImage = (image: BodyImage) => {
+    setCustomSvg(image.url);
+    setSelectedImageName(image.filename);
+    setFeedbackLocation(undefined);
+  };
+
+  const currentImageName = () => {
+    const rawName = selectedImageName ?? customSvg ?? '';
+    return rawName.split(/[/\\]/).pop() ?? rawName;
+  };
 
   const exportFeedbackLog = async () => {
     if (!feedbackLocation) {
@@ -55,9 +109,7 @@ function MarkSensationsPage() {
       return;
     }
 
-    const rawName = selectedImageName ?? customSvg ?? '';
-    const baseName = rawName.split(/[/\\]/).pop() ?? rawName;
-    const image_path = baseName;
+    const image_path = currentImageName();
 
     const payload = {
       log_id: logId.trim(), // Adding the ID here
@@ -91,6 +143,72 @@ function MarkSensationsPage() {
     }
   };
 
+  /**
+   * Send the painting for the trial the console names. `felt` false is the
+   * answer Nothing felt: an empty painting, with no drawing needed. The
+   * painting stays on the screen, so the subject can correct it and send
+   * again while the console scores the same trial.
+   */
+  const sendForTrial = async (felt: boolean) => {
+    if (!trial || !trial.trial_id || trial.can_draw !== true) {
+      showToast(trial ? trialBanner(trial).text : 'No trial to score', 'error');
+      return;
+    }
+    if (felt && (!feedbackLocation || feedbackLocation.chosenPoints.row.length === 0)) {
+      showToast('Mark a sensation first!', 'error');
+      return;
+    }
+
+    const image_path = currentImageName();
+    const location: SensationLocation = feedbackLocation
+      ? { ...feedbackLocation, image_path }
+      : {
+          image_path,
+          image_size: { w: 0, h: 0 },
+          segment_size_px: { w: 0, h: 0 },
+          coarsenessPercent: 80,
+          chosenPoints: { row: [], col: [] },
+        };
+
+    const payload = {
+      log_id: trial.subject_code ?? '',
+      filename: image_path,
+      feedbackLocation: felt ? location : { ...location, chosenPoints: { row: [], col: [] } },
+      trial: {
+        subject_code: trial.subject_code ?? '',
+        sequence_id: trial.sequence_id ?? '',
+        trial_id: trial.trial_id,
+      },
+      felt,
+    };
+
+    setSending(true);
+    try {
+      const response = await fetch('api/save-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Failed to save');
+
+      const result: { filename: string; console?: ConsoleAnswer } = await response.json();
+      const answer = result.console;
+      if (answer && answer.accepted && !answer.problem) {
+        const regions = answer.regions.length > 0 ? answer.regions.join(', ') : 'no region';
+        showToast(`Sent for trial ${trial.trial_id}: ${regions}`);
+      } else if (answer) {
+        showToast(answer.problem ?? answer.reason ?? 'The console refused the painting', 'error');
+      } else {
+        showToast(`Saved ${result.filename}`);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error saving to server', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -103,67 +221,82 @@ function MarkSensationsPage() {
         </Link>
       </header>
 
+      {linked && trial && <TrialBanner trial={trial} imageName={selectedImageName} />}
+
       <main className="app-main">
         {!customSvg && (
           <section className="panel panel-picker">
             <h2 className="panel-title">1. Choose body image</h2>
-            <p className="panel-description">
-              Select an SVG file from your computer or choose from previously uploaded images.
-            </p>
-            <SvgFilePicker
-              onSelect={({ imageUrl, originalName }) => {
-                setCustomSvg(imageUrl);
-                setSelectedImageName(originalName);
-                setFeedbackLocation(undefined);
-              }}
-            />
+            {inSequence ? (
+              <>
+                <p className="panel-description">Choose the hand of the session.</p>
+                <HandChoice
+                  images={availableImages}
+                  selected={selectedImageName}
+                  onPick={pickImage}
+                />
+              </>
+            ) : (
+              <>
+              <p className="panel-description">
+                Select an SVG file from your computer or choose from previously uploaded images.
+              </p>
+              <SvgFilePicker
+                onSelect={({ imageUrl, originalName }) => {
+                  setCustomSvg(imageUrl);
+                  setSelectedImageName(originalName);
+                  setFeedbackLocation(undefined);
+                }}
+              />
 
-            {availableImages.length > 0 && (
-              <div style={{ marginTop: '1.5rem' }}>
-                <h3 className="panel-subtitle">Previously uploaded images</h3>
-                <ul className="log-list body-parts-list">
-                  {availableImages.map((img) => (
-                    <li key={img.filename} className="body-parts-list-item">
-                      <button
-                        type="button"
-                        className="secondary-button secondary-button-small body-part-button"
-                        onClick={() => {
-                          setCustomSvg(img.url);
-                          setSelectedImageName(img.filename);
-                          setFeedbackLocation(undefined);
-                        }}
-                      >
-                        {img.filename}
-                      </button>
-                      <button
-                        type="button"
-                        className="body-part-remove"
-                        onClick={() => {
-                          if (!window.confirm(`Delete "${img.filename}"? This cannot be undone.`)) return;
-                          fetch(`api/images/${encodeURIComponent(img.filename)}`, { method: 'DELETE' })
-                            .then((res) => {
-                              if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d.detail ?? 'Delete failed')));
-                              return res.json();
-                            })
-                            .then(() => {
-                              refreshImages();
-                              if (selectedImageName === img.filename) {
-                                setCustomSvg(null);
-                                setSelectedImageName(null);
-                                setFeedbackLocation(undefined);
-                              }
-                              showToast('Image deleted');
-                            })
-                            .catch((err) => showToast(err instanceof Error ? err.message : 'Delete failed', 'error'));
-                        }}
-                        title="Delete this image"
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              {availableImages.length > 0 && (
+                <div style={{ marginTop: '1.5rem' }}>
+                  <h3 className="panel-subtitle">Previously uploaded images</h3>
+                  <ul className="log-list body-parts-list">
+                    {availableImages.map((img) => (
+                      <li key={img.filename} className="body-parts-list-item">
+                        <button
+                          type="button"
+                          className="secondary-button secondary-button-small body-part-button"
+                          onClick={() => {
+                            setCustomSvg(img.url);
+                            setSelectedImageName(img.filename);
+                            setFeedbackLocation(undefined);
+                          }}
+                        >
+                          {img.filename}
+                        </button>
+                        <button
+                          type="button"
+                          className="body-part-remove"
+                          onClick={() => {
+                            if (!window.confirm(`Delete "${img.filename}"? This cannot be undone.`)) return;
+                            fetch(`api/images/${encodeURIComponent(img.filename)}`, { method: 'DELETE' })
+                              .then((res) => {
+                                if (!res.ok) return res.json().then((d) => Promise.reject(new Error(d.detail ?? 'Delete failed')));
+                                return res.json();
+                              })
+                              .then(() => {
+                                refreshImages();
+                                if (selectedImageName === img.filename) {
+                                  setCustomSvg(null);
+                                  setSelectedImageName(null);
+                                  setFeedbackLocation(undefined);
+                                }
+                                showToast('Image deleted');
+                              })
+                              .catch((err) => showToast(err instanceof Error ? err.message : 'Delete failed', 'error'));
+                          }}
+                          title="Delete this image"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              </>
             )}
           </section>
         )}
@@ -178,24 +311,52 @@ function MarkSensationsPage() {
                 )}
               </div>
               <div className="panel-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => {
-                    setCustomSvg(null);
-                    setSelectedImageName(null);
-                    setFeedbackLocation(undefined);
-                  }}
-                >
-                  Choose another SVG
-                </button>
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={exportFeedbackLog}
-                >
-                  Export drawing log
-                </button>
+                {inSequence ? (
+                  <>
+                    <HandChoice
+                      images={availableImages}
+                      selected={selectedImageName}
+                      onPick={pickImage}
+                    />
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={!canDraw || sending}
+                      onClick={() => sendForTrial(false)}
+                    >
+                      Nothing felt
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={!canDraw || sending}
+                      onClick={() => sendForTrial(true)}
+                    >
+                      {trialId ? `Send for trial ${trialId}` : 'Send'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setCustomSvg(null);
+                        setSelectedImageName(null);
+                        setFeedbackLocation(undefined);
+                      }}
+                    >
+                      Choose another SVG
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={exportFeedbackLog}
+                    >
+                      Export drawing log
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -206,6 +367,11 @@ function MarkSensationsPage() {
                 onUpdate={(loc) => setFeedbackLocation(loc)}
                 coarseness={80}
               />
+              {linked && trial && !canDraw && (
+                <div className="locator-lock">
+                  <span className="locator-lock-text">{trialBanner(trial).text}</span>
+                </div>
+              )}
             </div>
           </section>
         )}
