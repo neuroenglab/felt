@@ -141,7 +141,7 @@ Two routes serve the link:
 The page reads `GET /api/trial` once per second and shows a trial banner at the
 top of the mark page:
 
-* `SCORING`, before Save: "Subject S01 · trial tr_0007 · pass 1 · draw and
+* `SCORING`, before Save: "Subject S01 Â· trial tr_0007 Â· pass 1 Â· draw and
   send" in green. The subject draws and sends.
 * `STIMULATING`: "Wait, stimulating" in blue.
 * The other states of a running sequence: "No trial to score" in grey.
@@ -153,11 +153,14 @@ top of the mark page:
 
 While a sequence runs, the drawing surface is locked outside `SCORING` and
 after Save, and the lock names the reason. The page then offers the two hand
-images only, Left hand and Right hand, with the hand of the console
-preselected; the banner adds " · the image is the other hand" in red when the
-chosen image is the other side. The log identifier is the subject code, with no
-prompt. The button reads "Send for trial tr_0007", and a second button,
-"Nothing felt", sends an empty painting with `felt` false. The toast reads
+images only, Left hand and Right hand. They live in `hands/` of the repository
+and the service serves them under `/hands/`, so a tablet needs no upload; the
+uploaded images stay for the unlinked page and the manual mode. The hand of the
+console is preselected at the start of a sequence, and the banner adds
+" Â· the image is the other hand" in red when the chosen image is the other
+side. The log identifier is the subject code, with no prompt. The button reads
+"Send for trial tr_0007", and a second button, "Nothing felt", sends an empty
+painting with `felt` false. The toast reads
 "Sent for trial tr_0007: d2_distal, d2_middle" in green, or the refusal of the
 console in red. The painting stays on the screen and clears when the trial
 changes.
