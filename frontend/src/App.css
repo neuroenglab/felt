@@ -383,6 +383,11 @@
   font-weight: 500;
 }
 
+/* The separator keeps the two texts of the banner apart. */
+.trial-banner-answered::before {
+  content: '\00b7\00a0';
+}
+
 .trial-banner-wrong-hand {
   color: #dc2626;
   font-weight: 600;
@@ -472,6 +477,17 @@
   background-color: #f3f4f6;
   border-color: #9ca3af;
   transform: translateY(-1px);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-button:disabled:hover,
+.secondary-button:disabled:hover {
+  transform: none;
 }
 
 .toast {
