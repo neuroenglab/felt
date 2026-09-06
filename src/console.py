@@ -49,8 +49,7 @@ class ConsoleLink:
         """
         if not self.linked:
             return None
-        now = time.monotonic()
-        if self._read_at is not None and now - self._read_at < CACHE_S:
+        if self._read_at is not None and time.monotonic() - self._read_at < CACHE_S:
             return self._status
         status: dict[str, Any] | None
         try:
@@ -58,7 +57,9 @@ class ConsoleLink:
         except (urllib.error.URLError, OSError, ValueError, TimeoutError):
             status = None
         self._status = status
-        self._read_at = now
+        # The cache starts when the answer arrives, so a slow console does not
+        # shorten the next wait.
+        self._read_at = time.monotonic()
         return status
 
     def trial(self) -> dict[str, Any]:

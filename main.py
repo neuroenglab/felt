@@ -243,7 +243,7 @@ async def process_feedback(data: ProcessFeedbackRequest):
     return response
 
 @app.get("/api/trial")
-async def read_trial():
+def read_trial():
     """The trial the console scores, for the trial banner of the page."""
     return console_link().trial()
 
@@ -269,18 +269,24 @@ def _safe_name(text: str) -> str:
     return "".join(c if c.isalnum() or c in "._-" else "_" for c in text)
 
 
+# A plain def, so FastAPI runs the console request in a worker thread and the
+# event loop keeps serving the other tablets.
 @app.post("/api/save-feedback")
-async def save_feedback(log_data: FeedbackLog):
+def save_feedback(log_data: FeedbackLog):
     try:
         os.makedirs(LOGS_DIR, exist_ok=True)
-        # Create a unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # The same export time goes into the file and into the request, so the
-        # console counts a painting once when it also reads the folder.
-        exported_at = datetime.now().astimezone().isoformat()
+        now = datetime.now()
         if log_data.trial is not None:
+            # A send names the trial. Two sends inside one second must not
+            # overwrite each other, so the name carries microseconds, and the
+            # export time is the ISO time the request carries.
+            timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
+            exported_at = now.astimezone().isoformat()
             stem = _safe_name(f"{log_data.trial.subject_code}_{log_data.trial.trial_id}")
         else:
+            # The unlinked page and the manual mode export as they always did.
+            timestamp = now.strftime("%Y%m%d_%H%M%S")
+            exported_at = timestamp
             stem = log_data.log_id
         filename = stem + "_" + log_data.filename.replace(".svg", "_svg") + "_" + timestamp + ".json"
         file_path = os.path.join(LOGS_DIR, filename)
@@ -317,6 +323,17 @@ app.mount(
     "/uploads",
     StaticFiles(directory=str(images_path)),
     name="uploads",
+)
+
+# The hand images of the linked page are part of the repository, so the tablet
+# finds them without an upload.
+hands_path = base_dir / "hands"
+os.makedirs(hands_path, exist_ok=True)
+
+app.mount(
+    "/hands",
+    StaticFiles(directory=str(hands_path)),
+    name="hands",
 )
 
 @app.get("/{full_path:path}")
