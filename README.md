@@ -102,6 +102,66 @@ uv sync
 uv run main.py --log-dir ./logs
 ```
 
+## Console link
+
+FELT can link to the calibration console, so the tablet names the trial it
+scores, accepts a drawing only while the console scores that trial, and sends
+the painting to the console as a request.
+
+One address configures the link:
+
+```bash
+uv run main.py --log-dir ./logs --console-url http://127.0.0.1:8000
+```
+
+* `--console-url <address>` names the console, for example
+  `http://127.0.0.1:8000`.
+* `CONSOLE_URL` is the same setting as an environment variable, for the Docker
+  container. The option wins over the variable.
+* Without either, FELT is not linked and works exactly as before.
+
+Two routes serve the link:
+
+* `GET /api/trial` answers `{"linked": false}` when no address is set.
+  Otherwise it answers `linked`, `reachable`, `state`, `sentence`,
+  `subject_code`, `sequence_id`, `trial_id`, `pass_index`, `trial_saved`,
+  `felt_answered`, `hand`, `manual` (no sequence runs) and `can_draw`. The
+  service reads `GET /calibration/sequence/status` of the console, with a
+  timeout of two seconds and a cache of one second, so many tablets do not
+  flood the console.
+* `POST /api/save-feedback` takes the two optional fields `trial`
+  (`subject_code`, `sequence_id`, `trial_id`) and `felt` beside the fields it
+  always took. It writes the file as before, with the two fields and one
+  export time, and posts the same object to
+  `POST /calibration/sequence/felt` of the console. Its answer carries
+  `console`: `accepted`, `regions`, `problem` and `reason`. A refusal of the
+  console, and an unreachable console, come back as `accepted` false with the
+  reason.
+
+The page reads `GET /api/trial` once per second and shows a trial banner at the
+top of the mark page:
+
+* `SCORING`, before Save: "Subject S01 · trial tr_0007 · pass 1 · draw and
+  send" in green. The subject draws and sends.
+* `STIMULATING`: "Wait, stimulating" in blue.
+* The other states of a running sequence: "No trial to score" in grey.
+* `IDLE`, no sequence: "No sequence, manual mode" in grey. The page then works
+  as the unlinked page, with its prompt for the log identifier and its export
+  to the file.
+* No answer from the console: "Console not reachable" in red.
+* After an answer of the current trial: "Answered, you can send again".
+
+While a sequence runs, the drawing surface is locked outside `SCORING` and
+after Save, and the lock names the reason. The page then offers the two hand
+images only, Left hand and Right hand, with the hand of the console
+preselected; the banner adds " · the image is the other hand" in red when the
+chosen image is the other side. The log identifier is the subject code, with no
+prompt. The button reads "Send for trial tr_0007", and a second button,
+"Nothing felt", sends an empty painting with `felt` false. The toast reads
+"Sent for trial tr_0007: d2_distal, d2_middle" in green, or the refusal of the
+console in red. The painting stays on the screen and clears when the trial
+changes.
+
 ## Releasing
 
 ### Github
