@@ -222,8 +222,7 @@ docker buildx build \
 `docker push ghcr.io/neuroenglab/felt:v<version>`
 
 
-### Marking-client presence
-
+### Marking-client presence and idle console status
 
 The marking page renews a client lease every two seconds. `GET /api/clients`
 reports whether at least one marking interface is present and the number of
@@ -232,3 +231,14 @@ Closing a page releases its lease; disconnected pages expire after seven seconds
 MAGI uses this endpoint to distinguish the server being online from a tablet or
 browser being available to mark sensations.
 
+When calibration is IDLE, the marking page asks `/api/trial?wait=25`. FELT holds
+one console status request with the last revision, so Begin wakes it immediately.
+The console caps each wait at its configured long-poll limit (currently ten
+seconds). A page starts its next read only after the previous read finishes;
+multiple marking pages share one cached console read. After End, the page returns
+to manual mode and waits for the next sequence instead of checking console status
+every second. Closing all marking pages stops further reads after in-flight work
+finishes. Ordinary `/api/trial` reads remain compatible with older clients.
+
+After updating, run `npm run build` in `frontend`, restart FELT and refresh any
+open marking pages so they use the new heartbeat and waiting behaviour.

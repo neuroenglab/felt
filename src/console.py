@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import time
+import threading
 import urllib.error
 import urllib.request
 from typing import Any
@@ -36,12 +37,18 @@ class ConsoleLink:
         self.base_url = (base_url or "").strip().rstrip("/")
         self._status: dict[str, Any] | None = None
         self._read_at: float | None = None
+        self._read_lock = threading.Lock()
 
     @property
     def linked(self) -> bool:
         return bool(self.base_url)
 
-    def status(self) -> dict[str, Any] | None:
+    def status(self, wait: float = 0) -> dict[str, Any] | None:
+        # One request per service, even when several marking pages are open.
+        with self._read_lock:
+            return self._read_status(wait)
+
+    def _read_status(self, wait: float) -> dict[str, Any] | None:
         """The sequence status, or None when the console does not answer.
 
         A failed read is cached like a good one, so an unreachable console is
@@ -53,7 +60,13 @@ class ConsoleLink:
             return self._status
         status: dict[str, Any] | None
         try:
-            status = self._request("GET", STATUS_PATH)
+            previous = self._status or {}
+            if wait > 0 and previous.get("state") == "IDLE" and previous.get("revision") is not None:
+                hold = min(25, wait)
+                path = f"{STATUS_PATH}?after={previous['revision']}&wait={hold}"
+                status = self._request("GET", path, timeout_s=hold + TIMEOUT_S)
+            else:
+                status = self._request("GET", STATUS_PATH)
         except (urllib.error.URLError, OSError, ValueError, TimeoutError):
             status = None
         self._status = status
@@ -62,11 +75,11 @@ class ConsoleLink:
         self._read_at = time.monotonic()
         return status
 
-    def trial(self) -> dict[str, Any]:
+    def trial(self, wait: float = 0) -> dict[str, Any]:
         """The answer of ``GET /api/trial`` of the FELT service."""
         if not self.linked:
             return {"linked": False}
-        status = self.status()
+        status = self.status(wait)
         if status is None:
             return {
                 "linked": True,
@@ -138,7 +151,8 @@ class ConsoleLink:
         return {"accepted": False, "regions": [], "problem": None, "reason": reason}
 
     def _request(
-        self, method: str, path: str, body: dict[str, Any] | None = None
+        self, method: str, path: str, body: dict[str, Any] | None = None,
+        *, timeout_s: float = TIMEOUT_S
     ) -> dict[str, Any]:
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Accept": "application/json"}
@@ -147,7 +161,7 @@ class ConsoleLink:
         request = urllib.request.Request(
             self.base_url + path, data=data, headers=headers, method=method
         )
-        with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
             text = response.read().decode("utf-8")
         answer = json.loads(text)
         if not isinstance(answer, dict):

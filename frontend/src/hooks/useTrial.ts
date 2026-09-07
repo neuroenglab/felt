@@ -62,6 +62,7 @@ export function useTrial(intervalMs = 1000): TrialInfo | null {
 
   useEffect(() => {
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
     const clientUrl = `api/clients/${clientId}`;
     const heartbeat = () => { void fetch(clientUrl, {method: 'PUT'}).catch(() => {}); };
@@ -84,7 +85,7 @@ export function useTrial(intervalMs = 1000): TrialInfo | null {
       const controller = new AbortController();
       inFlight.add(controller);
       try {
-        const response = await fetch('api/trial', { signal: controller.signal });
+        const response = await fetch('api/trial?wait=25', { signal: controller.signal });
         if (!response.ok) throw new Error(`api/trial answered ${response.status}`);
         const data: unknown = await response.json();
         if (stopped || mine !== generation) return;
@@ -98,14 +99,14 @@ export function useTrial(intervalMs = 1000): TrialInfo | null {
         reportDown();
       } finally {
         inFlight.delete(controller);
+        if (!stopped) timer = window.setTimeout(() => void read(), intervalMs);
       }
     };
 
     void read();
-    const timer = window.setInterval(() => void read(), intervalMs);
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
       window.clearInterval(heartbeatTimer);
       window.removeEventListener('pagehide', disconnect);
       disconnect();

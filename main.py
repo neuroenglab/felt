@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -245,9 +245,9 @@ async def process_feedback(data: ProcessFeedbackRequest):
     return response
 
 @app.get("/api/trial")
-def read_trial():
-    """The trial the console scores, for the trial banner of the page."""
-    return console_link().trial()
+def read_trial(wait: float = Query(default=0, ge=0, le=25)):
+    """When idle, wait for the next console sequence instead of polling it."""
+    return console_link().trial(wait=wait)
 
 
 @app.get("/api/clients")
