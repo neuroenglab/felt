@@ -220,3 +220,15 @@ docker buildx build \
 
 3. Push image:
 `docker push ghcr.io/neuroenglab/felt:v<version>`
+
+
+### Marking-client presence
+
+
+The marking page renews a client lease every two seconds. `GET /api/clients`
+reports whether at least one marking interface is present and the number of
+clients. Loading server health or image endpoints does not register a client.
+Closing a page releases its lease; disconnected pages expire after seven seconds.
+MAGI uses this endpoint to distinguish the server being online from a tablet or
+browser being available to mark sensations.
+

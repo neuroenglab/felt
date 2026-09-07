@@ -62,6 +62,13 @@ export function useTrial(intervalMs = 1000): TrialInfo | null {
 
   useEffect(() => {
     let stopped = false;
+    const clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const clientUrl = `api/clients/${clientId}`;
+    const heartbeat = () => { void fetch(clientUrl, {method: 'PUT'}).catch(() => {}); };
+    const disconnect = () => { void fetch(clientUrl, {method: 'DELETE', keepalive: true}).catch(() => {}); };
+    heartbeat();
+    const heartbeatTimer = window.setInterval(heartbeat, 2000);
+    window.addEventListener('pagehide', disconnect);
     // A slow answer must not overwrite a newer one.
     let generation = 0;
     const inFlight = new Set<AbortController>();
@@ -99,6 +106,9 @@ export function useTrial(intervalMs = 1000): TrialInfo | null {
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      window.clearInterval(heartbeatTimer);
+      window.removeEventListener('pagehide', disconnect);
+      disconnect();
       inFlight.forEach((controller) => controller.abort());
       inFlight.clear();
     };

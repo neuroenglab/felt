@@ -12,6 +12,7 @@ from pathlib import Path
 import argparse
 
 from src.console import ConsoleLink
+from src.clients import MarkingClients
 from src.stability import compute_stability
 from src.visualization import render_visualizations
 
@@ -31,6 +32,7 @@ os.environ["IMAGES_DIR"] = IMAGES_DIR
 # works on its own as before. The --console-url option writes the variable
 # before the server starts, so the reloader's child process sees it too.
 _console_link = ConsoleLink(os.environ.get("CONSOLE_URL", ""))
+_marking_clients = MarkingClients()
 
 
 def console_link() -> ConsoleLink:
@@ -246,6 +248,21 @@ async def process_feedback(data: ProcessFeedbackRequest):
 def read_trial():
     """The trial the console scores, for the trial banner of the page."""
     return console_link().trial()
+
+
+@app.get("/api/clients")
+def marking_clients():
+    return _marking_clients.status()
+
+
+@app.put("/api/clients/{client_id}", status_code=204)
+def marking_heartbeat(client_id: str):
+    _marking_clients.touch(client_id)
+
+
+@app.delete("/api/clients/{client_id}", status_code=204)
+def marking_disconnected(client_id: str):
+    _marking_clients.remove(client_id)
 
 
 class TrialRef(BaseModel):
