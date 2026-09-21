@@ -76,10 +76,11 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
     const coarsenessPercent = feedbackLocation?.coarsenessPercent ?? coarsenessProp;
     const chosenPoints: ChosenPointsDict = feedbackLocation?.chosenPoints ?? { row: [], col: [] };
 
-    // Use feedbackLocation size if available, otherwise current measured boundary
-    const currentBoundary = feedbackLocation?.image_size
-        ? { width: feedbackLocation.image_size.w, height: feedbackLocation.image_size.h }
-        : boundary;
+    // The measured image box; the stored size applies until the image is measured.
+    const currentBoundary = boundary
+        ?? (feedbackLocation?.image_size
+            ? { width: feedbackLocation.image_size.w, height: feedbackLocation.image_size.h }
+            : null);
 
     const { rows, cols } = currentBoundary
         ? getGridFromCoarseness(coarsenessPercent, currentBoundary.width, currentBoundary.height)
