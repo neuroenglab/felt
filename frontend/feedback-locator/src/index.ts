@@ -11,4 +11,5 @@ export type {
   SegmentSizePx,
   SensationLocation,
   FeedbackLocatorProps,
+  UnderlayLayer,
 } from './FeedbackLocator';

@@ -127,15 +127,20 @@ Two routes serve the link:
   `subject_code`, `sequence_id`, `trial_id`, `pass_index`, `trial_saved`,
   `felt_answered`, `hand`, `manual` (no sequence runs), `can_draw` and
   `purpose` (`target` while the subject paints the target of the run,
-  `sensation` while the console scores a trial, null otherwise). The
-  service reads `GET /calibration/sequence/status` of the console, with a
+  `sensation` while the console scores a trial, null otherwise) and `target`
+  (the painting the console accepted as the target of the run,
+  `{"feedbackLocation": ...}`, or null when the console sends none, so a page
+  that reloads mid-run paints its underlay again). The service reads
+  `GET /calibration/sequence/status` of the console, with a
   timeout of two seconds and a cache of one second, so many tablets do not
   flood the console.
-* `POST /api/save-feedback` takes the two optional fields `trial`
-  (`subject_code`, `sequence_id`, `trial_id`) and `felt` beside the fields it
-  always took. It writes the file as before, with the two fields and one
-  export time, and posts the same object to
-  `POST /calibration/sequence/felt` of the console. Its answer carries
+* `POST /api/save-feedback` takes the optional fields `trial`
+  (`subject_code`, `sequence_id`, `trial_id`), `felt`, `pain` (a boolean) and
+  `intensity` (a number from 0 to 10, or null) beside the fields it
+  always took. It writes the file as before, with the fields it was given and
+  one export time; a field left out, or null, is left out of the file. It
+  posts the same object to `POST /calibration/sequence/felt` of the console.
+  Its answer carries
   `console`: `accepted`, `regions`, `problem` and `reason`. A refusal of the
   console, and an unreachable console, come back as `accepted` false with the
   reason.
@@ -147,8 +152,9 @@ top of the mark page:
   send" in green. The subject draws and sends.
 * `TARGET`, before Save: "Subject S01 · paint the target · Paint the target
   reach, then send" in green, with the sentence of the console. The panel
-  reads "2. Paint the target", the button reads "Send the target", and the
-  page offers no Nothing felt. The toast reads "Sent the target: d2_distal".
+  reads "2. Paint the target", the brush paints green instead of the red of a
+  sensation, the button reads "Send the target", and the page offers no
+  Nothing felt. The toast reads "Sent the target: d2_distal".
 * `STIMULATING`: "Wait, stimulating" in blue.
 * The other states of a running sequence: "No trial to score" in grey.
 * `IDLE`, no sequence: "No sequence, manual mode" in grey. The page then works
@@ -170,6 +176,26 @@ sends an empty painting with `felt` false. The toast reads
 "Sent for trial tr_0007: d2_distal, d2_middle" in green, or the refusal of the
 console in red. The painting stays on the screen and clears when the trial
 changes.
+
+Once the console accepts the target, the target stays as a pale green layer
+under the painting of every following trial, so the subject sees the reach they
+described. The layer is read-only: it takes no brush, and it leaves the sent
+painting untouched. A target sent again replaces it, and the end of the
+sequence, manual mode or a new sequence drops it. A page that reloads mid-run
+has no target of its own and takes the one `GET /api/trial` reports in
+`target`; a console that reports none leaves the page without a layer until the
+next target is sent.
+
+While the console scores a trial, the page asks for two more answers beside the
+painting, above the drawing surface:
+
+* **Pain**, a toggle, off at the start of every trial.
+* **Intensity**, the steps 0 to 10, "not set" at the start of every trial. A
+  second press on the chosen step sets it back to not set.
+
+Both travel in the sent object as `pain` and `intensity`, for example
+`{"felt": true, "pain": true, "intensity": 7, ...}`. Nothing felt sends the
+pain as it stands and `"intensity": null`. The target carries neither field.
 
 ## Releasing
 

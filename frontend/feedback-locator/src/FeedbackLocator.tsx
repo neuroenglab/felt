@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 
 // ---------------------------------------------------------------------------
 // Types (Synced with your requested schema)
@@ -15,11 +15,22 @@ export type SensationLocation = {
     chosenPoints: ChosenPointsDict;
 };
 
+/** A painting shown under the active cells. It is read-only. */
+export type UnderlayLayer = {
+    location: SensationLocation;
+    color: string;
+    opacity: number;
+};
+
 export type FeedbackLocatorProps = {
     imageSrc: string;
     feedbackLocation?: SensationLocation;
     onUpdate: (location: SensationLocation) => void;
     coarseness?: number;
+    /** The colour the brush paints. The default is the sensation red. */
+    paintColor?: string;
+    /** A second, read-only layer beneath the active cells. */
+    underlay?: UnderlayLayer;
 };
 
 // ---------------------------------------------------------------------------
@@ -41,13 +52,27 @@ function getGridFromCoarseness(
     return { rows, cols };
 }
 
+/** The grid a stored painting was made in. */
+function gridOfLocation(
+    location: SensationLocation,
+    fallback: { rows: number; cols: number }
+): { rows: number; cols: number } {
+    const size = location.image_size;
+    if (!size || !(size.w > 0 && size.h > 0)) return fallback;
+    return getGridFromCoarseness(location.coarsenessPercent, size.w, size.h);
+}
+
 const DEFAULT_COARSNESS = 90;
+
+const DEFAULT_PAINT_COLOR = "rgba(255, 100, 100, 0.5)";
 
 export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
     imageSrc,
     feedbackLocation,
     onUpdate,
-    coarseness: coarsenessProp = DEFAULT_COARSNESS
+    coarseness: coarsenessProp = DEFAULT_COARSNESS,
+    paintColor = DEFAULT_PAINT_COLOR,
+    underlay
 }) => {
     const imgRef = useRef<HTMLImageElement>(null);
     const [boundary, setBoundary] = useState<{ width: number; height: number } | null>(null);
@@ -246,6 +271,24 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
         return false;
     }, [chosenPoints]);
 
+    // The underlay cells mapped into the current grid through their normalised
+    // cell centres.
+    const underlayCells = useMemo(() => {
+        if (!underlay) return null;
+        const source = underlay.location;
+        const points = source.chosenPoints ?? { row: [], col: [] };
+        const grid = gridOfLocation(source, { rows, cols });
+        const cells = new Set<string>();
+        for (let i = 0; i < points.row.length; i++) {
+            const u = (points.col[i] + 0.5) / grid.cols;
+            const v = (points.row[i] + 0.5) / grid.rows;
+            const c = Math.max(0, Math.min(cols - 1, Math.floor(u * cols)));
+            const r = Math.max(0, Math.min(rows - 1, Math.floor(v * rows)));
+            cells.add(`${r},${c}`);
+        }
+        return cells;
+    }, [underlay, rows, cols]);
+
     const gridReady = currentBoundary && currentBoundary.width > 0 && currentBoundary.height > 0;
 
     return (
@@ -353,11 +396,40 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                     onLoad={measureImage}
                     style={{ display: "block", maxWidth: "100%", height: "auto", pointerEvents: "none", backgroundColor: "white" }}
                 />
+                {gridReady && underlayCells && underlayCells.size > 0 && (
+                    /* The read-only target layer, under the active cells. */
+                    <div
+                        aria-hidden="true"
+                        style={{
+                            position: "absolute", inset: 0,
+                            display: "grid",
+                            gridTemplateRows: `repeat(${rows}, 1fr)`,
+                            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                            opacity: underlay!.opacity,
+                            pointerEvents: "none",
+                            zIndex: 0
+                        }}
+                    >
+                        {Array.from({ length: rows * cols }).map((_, i) => {
+                            const r = Math.floor(i / cols);
+                            const c = i % cols;
+                            return (
+                                <div key={i} style={{
+                                    backgroundColor: underlayCells.has(`${r},${c}`)
+                                        ? underlay!.color
+                                        : "transparent",
+                                    pointerEvents: "none"
+                                }} />
+                            );
+                        })}
+                    </div>
+                )}
                 {gridReady && (
                     <div
                         style={{
                             position: "absolute", inset: 0,
                             display: "grid",
+                            zIndex: 1,
                             gridTemplateRows: `repeat(${rows}, 1fr)`,
                             gridTemplateColumns: `repeat(${cols}, 1fr)`,
                             cursor: "crosshair",
@@ -482,7 +554,7 @@ export const FeedbackLocator: React.FC<FeedbackLocatorProps> = ({
                             return (
                                 <div key={i} style={{
                                     border: "1px solid rgba(0,0,0,0.15)",
-                                    backgroundColor: isChosen(r, c) ? "rgba(255, 100, 100, 0.5)" : "transparent",
+                                    backgroundColor: isChosen(r, c) ? paintColor : "transparent",
                                     pointerEvents: "none"
                                 }} />
                             );

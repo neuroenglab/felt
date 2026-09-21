@@ -19,6 +19,12 @@ type BodyImage = {
   url: string;
 };
 
+// The brush colour of a target painting.
+const TARGET_COLOR = 'rgba(22, 163, 74, 0.55)';
+// The colour and the opacity of the target underlay.
+const UNDERLAY_COLOR = '#16a34a';
+const UNDERLAY_OPACITY = 0.3;
+
 /** What the console answered to a sent painting, through the FELT service. */
 type ConsoleAnswer = {
   accepted: boolean;
@@ -60,6 +66,13 @@ function MarkSensationsPage() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [availableImages, setAvailableImages] = useState<BodyImage[]>([]);
   const [sending, setSending] = useState(false);
+  // The target of the run, under the painting. It is read-only and not exported.
+  const [underlay, setUnderlay] = useState<{ key: string; location: SensationLocation } | null>(
+    null,
+  );
+  // What the subject reports beside the painting of a sensation.
+  const [pain, setPain] = useState(false);
+  const [intensity, setIntensity] = useState<number | null>(null);
 
   const trial = useTrial(1000);
   const linked = trial?.linked === true;
@@ -71,6 +84,8 @@ function MarkSensationsPage() {
   const canDraw = !linked || trial?.can_draw === true;
   // The subject paints the target of the run, not the sensation of a trial.
   const paintingTarget = inSequence && trial?.purpose === 'target';
+  // The subject paints a sensation and reports the pain and the intensity.
+  const paintingSensation = inSequence && trial?.purpose === 'sensation';
   const hand = trial?.hand ?? null;
   const trialId = trial?.trial_id ?? null;
   // The sequence the console runs now, and the trial inside it.
@@ -79,6 +94,12 @@ function MarkSensationsPage() {
       ? `${trial.subject_code ?? ''}/${trial.sequence_id ?? ''}`
       : null;
   const trialKey = `${trial?.subject_code ?? ''}/${trial?.sequence_id ?? ''}/${trialId ?? ''}`;
+  // The run the underlay belongs to. It is null in manual mode and off the link.
+  const underlayKey = inSequence
+    ? `${trial?.subject_code ?? ''}/${trial?.sequence_id ?? ''}`
+    : null;
+  // The target the console reports for the run.
+  const consoleTarget = trial?.target?.feedbackLocation ?? null;
   const pickedSequence = useRef<string | null>(null);
 
   const refreshImages = () => {
@@ -111,10 +132,25 @@ function MarkSensationsPage() {
     setFeedbackLocation(undefined);
   }, [sequenceKey, hand]);
 
-  // The painting of a trial stays on the screen until the trial changes.
+  // A new trial clears the painting, the pain and the intensity.
   useEffect(() => {
     setFeedbackLocation((prev) => (prev ? { ...prev, chosenPoints: { row: [], col: [] } } : prev));
+    setPain(false);
+    setIntensity(null);
   }, [trialKey]);
+
+  // A new run, or the end of the sequence, drops the underlay.
+  useEffect(() => {
+    setUnderlay((prev) => (prev && prev.key === underlayKey ? prev : null));
+  }, [underlayKey]);
+
+  // The page takes the target of the console when it has none of its own.
+  useEffect(() => {
+    if (!underlayKey || !consoleTarget) return;
+    setUnderlay((prev) =>
+      prev && prev.key === underlayKey ? prev : { key: underlayKey, location: consoleTarget },
+    );
+  }, [underlayKey, consoleTarget]);
 
   const pickImage = (image: BodyImage | HandImage) => {
     setCustomSvg(image.url);
@@ -214,6 +250,8 @@ function MarkSensationsPage() {
         trial_id: trial.trial_id,
       },
       felt,
+      // A target carries no report. Nothing felt carries the pain and no intensity.
+      ...(paintingTarget ? {} : { pain, intensity: felt ? intensity : null }),
     };
 
     setSending(true);
@@ -230,6 +268,8 @@ function MarkSensationsPage() {
       const answer = result.console;
       if (answer && answer.accepted && !answer.problem) {
         const regions = answer.regions.length > 0 ? answer.regions.join(', ') : 'no region';
+        // The accepted target becomes the underlay of the run.
+        if (paintingTarget) setUnderlay({ key: underlayKey ?? trialKey, location });
         showToast(
           paintingTarget
             ? `Sent the target: ${regions}`
@@ -357,6 +397,39 @@ function MarkSensationsPage() {
                 {inSequence ? (
                   <>
                     <HandChoice selected={selectedImageName} onPick={pickImage} />
+                    {paintingSensation && (
+                      <div className="report-controls">
+                        <button
+                          type="button"
+                          className={`report-pain${pain ? ' report-pain-on' : ''}`}
+                          aria-pressed={pain}
+                          onClick={() => setPain((was) => !was)}
+                        >
+                          Pain {pain ? 'on' : 'off'}
+                        </button>
+                        <div className="report-intensity" role="group" aria-label="Intensity">
+                          <span className="report-intensity-label">
+                            Intensity: {intensity === null ? 'not set' : intensity}
+                          </span>
+                          <div className="report-intensity-scale">
+                            {Array.from({ length: 11 }, (_, step) => (
+                              <button
+                                key={step}
+                                type="button"
+                                className={`report-step${intensity === step ? ' report-step-on' : ''}`}
+                                aria-pressed={intensity === step}
+                                // A second press on the chosen step unsets it.
+                                onClick={() =>
+                                  setIntensity((was) => (was === step ? null : step))
+                                }
+                              >
+                                {step}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {!paintingTarget && (
                       <button
                         type="button"
@@ -411,6 +484,16 @@ function MarkSensationsPage() {
                 feedbackLocation={feedbackLocation}
                 onUpdate={(loc) => setFeedbackLocation(loc)}
                 coarseness={80}
+                paintColor={paintingTarget ? TARGET_COLOR : undefined}
+                underlay={
+                  underlay
+                    ? {
+                        location: underlay.location,
+                        color: UNDERLAY_COLOR,
+                        opacity: UNDERLAY_OPACITY,
+                      }
+                    : undefined
+                }
               />
               {linked && trial && !canDraw && (
                 <div className="locator-lock">
