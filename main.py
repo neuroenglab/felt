@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any
 import os
 import json
@@ -279,6 +279,10 @@ class FeedbackLog(BaseModel):
     # Present only when FELT is linked to a console.
     trial: TrialRef | None = None
     felt: bool | None = None
+    # What the subject reports beside the painting of a sensation. A target
+    # carries neither.
+    pain: bool | None = None
+    intensity: float | None = Field(default=None, ge=0, le=10)
 
 
 def _safe_name(text: str) -> str:
@@ -312,7 +316,7 @@ def save_feedback(log_data: FeedbackLog):
         payload["log_id"] = log_data.log_id
         payload["feedbackLocation"]["exported_at"] = exported_at
         # A FELT without the console link writes the file it always wrote.
-        for field in ("trial", "felt"):
+        for field in ("trial", "felt", "pain", "intensity"):
             if payload.get(field) is None:
                 payload.pop(field, None)
 
