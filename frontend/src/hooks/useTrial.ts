@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+import type { SensationLocation } from '@neuroenglab/nel-feedback-ui';
+
 /** The answer of `GET /api/trial` of the FELT service. */
 export type TrialInfo = {
   /** False when FELT runs without a console address; the page works as before. */
@@ -20,6 +22,8 @@ export type TrialInfo = {
   can_draw?: boolean;
   /** What the painting is for: the target of the run, or the sensation of a trial. */
   purpose?: 'target' | 'sensation' | null;
+  /** The target the console accepted for this run. */
+  target?: { feedbackLocation: SensationLocation } | null;
 };
 
 const isText = (value: unknown): boolean =>
@@ -29,6 +33,10 @@ const isFlag = (value: unknown): boolean => value === undefined || typeof value 
 
 const isCount = (value: unknown): boolean =>
   value === undefined || value === null || typeof value === 'number';
+
+/** True when the target is an object, null, or absent. */
+const isTarget = (value: unknown): boolean =>
+  value === undefined || value === null || (typeof value === 'object' && !Array.isArray(value));
 
 /** True when the answer carries the fields the page reads, with their types. */
 function isTrialInfo(value: unknown): value is TrialInfo {
@@ -48,7 +56,8 @@ function isTrialInfo(value: unknown): value is TrialInfo {
     isText(fields.hand) &&
     isFlag(fields.manual) &&
     isFlag(fields.can_draw) &&
-    isText(fields.purpose)
+    isText(fields.purpose) &&
+    isTarget(fields.target)
   );
 }
 

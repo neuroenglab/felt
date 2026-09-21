@@ -33,6 +33,18 @@ class ConsoleTargetTests(unittest.TestCase):
         self.assertFalse(trial["manual"])
         self.assertIsNone(trial["purpose"])
 
+    def test_the_target_of_the_run_passes_through(self):
+        painting = {"feedbackLocation": {"chosenPoints": {"row": [1], "col": [2]}}}
+        trial = link_with({
+            "state": "SCORING", "purpose": "sensation", "trial_id": "tr_0001",
+            "target": painting,
+        }).trial()
+        self.assertEqual(trial["target"], painting)
+
+    def test_a_console_that_sends_no_target_answers_none(self):
+        trial = link_with({"state": "SCORING", "purpose": "sensation"}).trial()
+        self.assertIsNone(trial["target"])
+
     def test_unreachable_console_answers_no_purpose(self):
         link = ConsoleLink("http://console.test")
         def request(*a, **kw):
@@ -42,3 +54,4 @@ class ConsoleTargetTests(unittest.TestCase):
         self.assertFalse(trial["reachable"])
         self.assertFalse(trial["can_draw"])
         self.assertIsNone(trial["purpose"])
+        self.assertIsNone(trial["target"])
