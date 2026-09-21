@@ -18,6 +18,8 @@ export type TrialInfo = {
   manual?: boolean;
   /** True in the manual mode, and while the console scores the trial. */
   can_draw?: boolean;
+  /** What the painting is for: the target of the run, or the sensation of a trial. */
+  purpose?: 'target' | 'sensation' | null;
 };
 
 const isText = (value: unknown): boolean =>
@@ -45,7 +47,8 @@ function isTrialInfo(value: unknown): value is TrialInfo {
     isFlag(fields.felt_answered) &&
     isText(fields.hand) &&
     isFlag(fields.manual) &&
-    isFlag(fields.can_draw)
+    isFlag(fields.can_draw) &&
+    isText(fields.purpose)
   );
 }
 
@@ -127,6 +130,14 @@ export function trialBanner(trial: TrialInfo): { text: string; tone: BannerTone 
   }
   if (trial.manual) {
     return { text: 'No sequence, manual mode', tone: 'idle' };
+  }
+  if (trial.can_draw && trial.purpose === 'target') {
+    return {
+      text:
+        `Subject ${trial.subject_code ?? '?'} · paint the target` +
+        ` · ${trial.sentence ?? 'draw and send'}`,
+      tone: 'ready',
+    };
   }
   if (trial.can_draw) {
     return {

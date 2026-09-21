@@ -95,6 +95,7 @@ class ConsoleLink:
                 "hand": None,
                 "manual": False,
                 "can_draw": False,
+                "purpose": None,
             }
         state = status.get("state")
         trial_saved = bool(status.get("trial_saved"))
@@ -114,9 +115,12 @@ class ConsoleLink:
             "felt_answered": bool(status.get("felt_answered")),
             "hand": status.get("hand"),
             "manual": manual,
-            # While a sequence runs the subject draws in SCORING only, and
-            # only before Save.
-            "can_draw": manual or (state == "SCORING" and not trial_saved),
+            # While a sequence runs the subject draws in SCORING and TARGET
+            # only, and only before Save.
+            "can_draw": manual or (state in ("SCORING", "TARGET") and not trial_saved),
+            # What the painting is for: "target" in TARGET, "sensation" in
+            # SCORING, null otherwise.
+            "purpose": status.get("purpose"),
         }
 
     def send_felt(self, payload: dict[str, Any]) -> dict[str, Any]:

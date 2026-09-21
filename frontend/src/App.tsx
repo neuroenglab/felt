@@ -69,6 +69,8 @@ function MarkSensationsPage() {
   const inSequence = linked && !manual;
   // Without the console link the page draws and exports as it always did.
   const canDraw = !linked || trial?.can_draw === true;
+  // The subject paints the target of the run, not the sensation of a trial.
+  const paintingTarget = inSequence && trial?.purpose === 'target';
   const hand = trial?.hand ?? null;
   const trialId = trial?.trial_id ?? null;
   // The sequence the console runs now, and the trial inside it.
@@ -228,7 +230,13 @@ function MarkSensationsPage() {
       const answer = result.console;
       if (answer && answer.accepted && !answer.problem) {
         const regions = answer.regions.length > 0 ? answer.regions.join(', ') : 'no region';
-        showToast(`Sent for trial ${trial.trial_id}: ${regions}`, 'success', 3000);
+        showToast(
+          paintingTarget
+            ? `Sent the target: ${regions}`
+            : `Sent for trial ${trial.trial_id}: ${regions}`,
+          'success',
+          3000,
+        );
       } else if (answer) {
         showToast(
           answer.problem ?? answer.reason ?? 'The console refused the painting',
@@ -338,7 +346,9 @@ function MarkSensationsPage() {
           <section className="panel panel-locator">
             <div className="panel-header-row">
               <div>
-                <h2 className="panel-title">2. Mark sensation locations</h2>
+                <h2 className="panel-title">
+                  {paintingTarget ? '2. Paint the target' : '2. Mark sensation locations'}
+                </h2>
                 {selectedImageName && (
                   <p className="panel-file-label">Current image: {selectedImageName}</p>
                 )}
@@ -347,21 +357,27 @@ function MarkSensationsPage() {
                 {inSequence ? (
                   <>
                     <HandChoice selected={selectedImageName} onPick={pickImage} />
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={!canDraw || sending}
-                      onClick={() => sendForTrial(false)}
-                    >
-                      Nothing felt
-                    </button>
+                    {!paintingTarget && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={!canDraw || sending}
+                        onClick={() => sendForTrial(false)}
+                      >
+                        Nothing felt
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="primary-button"
                       disabled={!canDraw || sending}
                       onClick={() => sendForTrial(true)}
                     >
-                      {trialId ? `Send for trial ${trialId}` : 'Send'}
+                      {paintingTarget
+                        ? 'Send the target'
+                        : trialId
+                          ? `Send for trial ${trialId}`
+                          : 'Send'}
                     </button>
                   </>
                 ) : (
