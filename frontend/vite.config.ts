@@ -12,6 +12,11 @@ const normalizedBasePath = basePath.endsWith('/') ? basePath : `${basePath}/`
 export default defineConfig({
   base: normalizedBasePath,
   plugins: [react()],
+  build: {
+    // The Python package serves the page from here, so the wheel carries it.
+    outDir: path.resolve(dirname, '../src/felt/static'),
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       // Use the vendored feedback-locator source instead of the published
