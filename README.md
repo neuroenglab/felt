@@ -1,69 +1,122 @@
 # FELT: Perception Feedback Tool
 
-Interactive web app for marking perceived sensations on body-part SVGs and exporting structured logs.
+A marking page for tablets: the subject paints where a sensation is felt on a
+body-part SVG, and the service writes structured logs and, when linked, sends
+the painting to a calibration console.
 
-## How to run
+FELT is a Python package. A pipeline starts it with one function call, an
+operator with one command, and the marking page ships inside the package, so
+nobody needs Node or a clone of this repository to run it.
 
-### Run with Docker (recommended)
+## Install
 
-#### Requirements
+With `uv`, as a tool on PATH (the `felt` command):
 
-* [docker](https://www.docker.com/products/docker-desktop/) installed
-
-#### Steps
-
-1.Pull image:
-
-```bash
-docker pull ghcr.io/neuroenglab/felt:v<version>
+```
+uv tool install git+https://github.com/neuroenglab/MobileFeedback@v0.1.0
 ```
 
-2.Start container:
+As a dependency of a Python project:
 
-Linux/WSL:
-```bash
-docker run -d --rm -p 11055:5000 -v $(pwd)/logging:/app/logs --name felt ghcr.io/neuroenglab/felt:v<version>
+```
+uv add git+https://github.com/neuroenglab/MobileFeedback@v0.1.0
+pip install git+https://github.com/neuroenglab/MobileFeedback@v0.1.0
 ```
 
-Windows/PowerShell
+Python 3.12 or newer. Drop the `@v0.1.0` for the latest commit, or pin a
+commit instead of a tag.
 
-```powershell
-docker run -d --rm -p 11055:5000 -v "${PWD}\logging:/app/logs" --name felt ghcr.io/neuroenglab/felt:v<version>
+## Start from Python
+
+```python
+import felt
+
+server = felt.start(tailscale=True, console_url="http://127.0.0.1:8765")
+print(server.url)                     # http://100.x.y.z:5000, for the tablet
+server.wait_for_marking_page()        # until a tablet opens the page
+...
+server.stop()
 ```
 
-2.Open the app in your browser:
+`felt.start(...)` serves on a background thread of the calling process and
+returns once the port answers. It takes:
 
-```text
-http://localhost:11055
+| Argument | Default | Meaning |
+|---|---|---|
+| `host` | `127.0.0.1` | The interface to bind. `0.0.0.0` for every network of the PC. |
+| `port` | `5000` | The TCP port. |
+| `tailscale` | `False` | Bind this PC's Tailscale address instead of `host`. |
+| `log_dir` | `./logs` | Where the feedback logs are written. |
+| `images_dir` | `./uploads` | Where uploaded body-part SVGs live. |
+| `console_url` | none | The calibration console to link, for example `http://127.0.0.1:8765`. |
+| `root_path` | none | The prefix a reverse proxy strips, for example `/felt`. |
+
+It raises `felt.TailscaleError` when `tailscale=True` and Tailscale is not
+installed, not running or not logged in. The message says how to install it
+and how to start without it (`host="0.0.0.0"`). It raises `felt.FeltError`
+when the port is taken.
+
+The returned `FeltServer` has `url`, `running`, `marking_page_open()`,
+`marking_clients()`, `wait_for_marking_page(timeout_s)` and `stop()`, and it
+works as a context manager:
+
+```python
+with felt.FeltServer(felt.Settings(port=5000, log_dir="runs/S01/felt")) as server:
+    ...
 ```
 
-3.Logs:
+`felt.serve(...)` takes the same arguments and serves on the calling thread
+until Ctrl+C.
 
-* Saved JSON logs are written into the `logging/` directory on the host.
+A process that did not start FELT asks a running one with `felt.FeltClient`:
 
-### Deploy behind reverse proxy under `/felt/`
-
-When serving FELT at `https://server/felt/`, you must configure both build-time and runtime paths.
-
-1. Build image with frontend base path:
-
-```bash
-docker build \
-  --build-arg VITE_BASE_PATH=/felt/ \
-  -t felt:subpath .
+```python
+tablet = felt.FeltClient("http://100.x.y.z:5000")
+tablet.reachable()
+tablet.wait_for_marking_page(timeout_s=120)
+tablet.trial()                        # what the page shows about the console link
 ```
 
-2. Run container with FastAPI root path:
+## Start from a terminal
 
-```bash
-docker run -d --rm \
-  -p 5000:5000 \
-  -e ROOT_PATH=/felt \
-  -v $(pwd)/logging:/app/logs \
-  --name felt felt:subpath
+```
+felt --tailscale --log-dir ./logs --console-url http://127.0.0.1:8765
 ```
 
-3. Nginx location must preserve forwarded headers and strip the prefix:
+`felt --help` lists the options; they are the arguments of `felt.start`, plus
+`--build` (rebuild the page from a clone), `--reload` (restart on source
+changes) and `--version`. The environment variables `FELT_HOST`, `FELT_PORT`,
+`LOGS_DIR`, `IMAGES_DIR`, `CONSOLE_URL` and `ROOT_PATH` are the defaults of
+the same settings; an option wins over its variable.
+
+Without Tailscale, bind another interface and give the tablet the address of
+the PC on that network:
+
+```
+felt --host 0.0.0.0 --log-dir ./logs
+```
+
+## Run with Docker
+
+```
+docker run -d --rm -p 11055:5000 -v "${PWD}/logs:/app/logs" --name felt ghcr.io/neuroenglab/felt:v<version>
+```
+
+The image is built from this repository with `docker compose up --build`.
+`CONSOLE_URL` and `ROOT_PATH` are read from the environment. To pull the
+image, log in to `ghcr.io` with a GitHub token that has `read:packages` (see
+Releasing).
+
+### Behind a reverse proxy under `/felt/`
+
+The page is built for the root by default. For a prefix, build the image with
+the prefix and run it with the matching root path:
+
+```
+VITE_BASE_PATH=/felt/ ROOT_PATH=/felt docker compose up --build -d
+```
+
+Nginx must preserve the forwarded headers and strip the prefix:
 
 ```nginx
 location /felt/ {
@@ -75,32 +128,19 @@ location /felt/ {
 }
 ```
 
-If you use `docker compose`, set:
+## Develop
 
-```bash
-VITE_BASE_PATH=/felt/ ROOT_PATH=/felt docker compose up --build -d
+From a clone, with Node 22 or newer:
+
 ```
-
-### Run using *uv* and *python3*
-
-#### Steps
-
-##### Build Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-#### Run app
-
-Run from application root:
-
-```bash
 uv sync
-uv run main.py --log-dir ./logs
+cd frontend && npm install && cd ..
+uv run felt --build --reload
 ```
+
+`npm run build` writes the page to `src/felt/static`, where the package serves
+it. `npm run dev` in `frontend/` serves the page with hot reload and proxies
+`/api` to a `felt` on port 5000. `uv run pytest` runs the tests.
 
 ## Console link
 
@@ -111,7 +151,7 @@ the painting to the console as a request.
 One address configures the link:
 
 ```bash
-uv run main.py --log-dir ./logs --console-url http://127.0.0.1:8000
+felt --log-dir ./logs --console-url http://127.0.0.1:8000
 ```
 
 * `--console-url <address>` names the console, for example
@@ -165,8 +205,8 @@ top of the mark page:
 
 While a sequence runs, the drawing surface is locked outside `SCORING` and
 `TARGET`, and after Save, and the lock names the reason. The page then offers
-the two hand images only, Left hand and Right hand. They live in `hands/` of
-the repository and the service serves them under `/hands/`, so a tablet needs
+the two hand images only, Left hand and Right hand. They ship inside the
+package and the service serves them under `/hands/`, so a tablet needs
 no upload; the uploaded images stay for the unlinked page and the manual mode.
 The hand of the console is preselected at the start of a sequence, and the
 banner adds " · the image is the other hand" in red when the chosen image is
@@ -199,13 +239,29 @@ pain as it stands and `"intensity": null`. The target carries neither field.
 
 ## Releasing
 
-### Github
+### Python package
 
-Tag commit on the master branch:
-`git tag -a v<version> -m <release_message>`
+The built marking page is committed under `src/felt/static`, so a git install
+carries it. A release is:
 
-Push to github:
-`git push origin v<version>`
+1. Bump `version` in `pyproject.toml`.
+2. Build the page and commit it, from the clone:
+
+   ```
+   cd frontend && npm install && npm run build && cd ..
+   git add src/felt/static pyproject.toml
+   git commit -m "release v<version>"
+   ```
+
+3. Tag and push:
+
+   ```
+   git tag -a v<version> -m <release_message>
+   git push origin master v<version>
+   ```
+
+`uv run pytest` before the tag. `uv build` makes the wheel and sdist under
+`dist/` when a file is wanted, for example as a release asset.
 
 ### Docker
 
@@ -272,5 +328,5 @@ to manual mode and waits for the next sequence instead of checking console statu
 every second. Closing all marking pages stops further reads after in-flight work
 finishes. Ordinary `/api/trial` reads remain compatible with older clients.
 
-After updating, run `npm run build` in `frontend`, restart FELT and refresh any
+After updating, run `felt --build` from the clone, restart FELT and refresh any
 open marking pages so they use the new heartbeat and waiting behaviour.
