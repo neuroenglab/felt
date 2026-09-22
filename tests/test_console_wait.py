@@ -1,6 +1,6 @@
 import threading
 import unittest
-from src.console import ConsoleLink
+from felt.console import ConsoleLink
 
 
 class ConsoleWaitTests(unittest.TestCase):

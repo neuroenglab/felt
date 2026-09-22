@@ -1,5 +1,5 @@
 import unittest
-from src.clients import MarkingClients
+from felt.clients import MarkingClients
 
 
 class PresenceTests(unittest.TestCase):

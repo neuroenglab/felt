@@ -1,5 +1,5 @@
 import unittest
-from src.console import ConsoleLink
+from felt.console import ConsoleLink
 
 
 def link_with(status):
