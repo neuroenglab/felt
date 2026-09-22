@@ -118,11 +118,10 @@ class TailscaleTests(unittest.TestCase):
         finally:
             tailscale.find_executable = original
         message = str(caught.exception)
-        self.assertIn("tailscale.com/download", message)
-        self.assertIn("host='0.0.0.0'", message)
-        self.assertIn("--host 0.0.0.0", message)
+        self.assertIn("Tailscale is not installed", message)
+        self.assertIn("--tailscale auto", message)
 
-    def test_auto_binds_every_interface_without_tailscale(self):
+    def test_auto_serves_this_machine_without_tailscale(self):
         from felt import tailscale
 
         original = tailscale.find_executable
@@ -131,7 +130,7 @@ class TailscaleTests(unittest.TestCase):
             settings = felt.settings_for(tailscale="auto", port=5002)
         finally:
             tailscale.find_executable = original
-        self.assertEqual(settings.url, "http://0.0.0.0:5002")
+        self.assertEqual(settings.url, "http://127.0.0.1:5002")
 
     def test_without_the_flag_tailscale_is_never_consulted(self):
         settings = felt.settings_for(host="0.0.0.0", port=5001)

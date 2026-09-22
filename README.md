@@ -45,15 +45,14 @@ returns once the port answers. It takes:
 |---|---|---|
 | `host` | `127.0.0.1` | The interface to bind. `0.0.0.0` for every network of the PC. |
 | `port` | `5000` | The TCP port. |
-| `tailscale` | `False` | Bind this PC's Tailscale address instead of `host`. `"auto"` binds every interface when Tailscale is missing, and prints the LAN address for the tablet. |
+| `tailscale` | `False` | Bind this PC's Tailscale address instead of `host`. `"auto"` serves on this machine only (`127.0.0.1`) when Tailscale is missing. |
 | `log_dir` | `./logs` | Where the feedback logs are written. |
 | `images_dir` | `./uploads` | Where uploaded body-part SVGs live. |
 | `console_url` | none | The calibration console to link, for example `http://127.0.0.1:8765`. |
 | `root_path` | none | The prefix a reverse proxy strips, for example `/felt`. |
 
 It raises `felt.TailscaleError` when `tailscale=True` and Tailscale is not
-installed, not running or not logged in. The message says how to install it
-and how to start without it (`host="0.0.0.0"`). It raises `felt.FeltError`
+installed, not running or not logged in. It raises `felt.FeltError`
 when the port is taken.
 
 The returned `FeltServer` has `url`, `running`, `marking_page_open()`,
@@ -89,9 +88,8 @@ changes) and `--version`. The environment variables `FELT_HOST`, `FELT_PORT`,
 `LOGS_DIR`, `IMAGES_DIR`, `CONSOLE_URL` and `ROOT_PATH` are the defaults of
 the same settings; an option wins over its variable.
 
-`felt --tailscale auto` falls back to every interface when Tailscale is
-missing and prints the address of the PC on the local network for the tablet.
-Without Tailscale at all, bind another interface yourself:
+`felt --tailscale auto` serves on this machine only when Tailscale is missing.
+For a tablet on the local WiFi instead, bind every interface:
 
 ```
 felt --host 0.0.0.0 --log-dir ./logs

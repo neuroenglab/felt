@@ -23,7 +23,7 @@ import uvicorn
 
 from felt.app import create_app
 from felt.settings import Settings
-from felt.tailscale import TailscaleError, lan_ipv4, tailscale_ipv4
+from felt.tailscale import TailscaleError, tailscale_ipv4
 
 logger = logging.getLogger("felt")
 
@@ -38,7 +38,7 @@ class FeltError(RuntimeError):
 def resolve_host(host: str | None, tailscale: bool | str) -> str:
     """The interface to bind: this PC's Tailscale address, else ``host``.
 
-    ``tailscale="auto"`` binds every interface when Tailscale is missing.
+    ``tailscale="auto"`` binds this machine only when Tailscale is missing.
 
     Raises:
         TailscaleError: ``tailscale`` is True and Tailscale is missing or not running.
@@ -47,7 +47,7 @@ def resolve_host(host: str | None, tailscale: bool | str) -> str:
         try:
             return tailscale_ipv4()
         except TailscaleError:
-            return "0.0.0.0"
+            return Settings.host
     if tailscale:
         return tailscale_ipv4()
     return host or Settings.host
@@ -70,9 +70,9 @@ def settings_for(
     """
     if tailscale:
         host = resolve_host(host, tailscale)
-        if host == "0.0.0.0":
-            print(f"Tailscale is not available: FELT binds every interface, and the tablet reaches "
-                  f"it on the local network at http://{lan_ipv4()}:{port or Settings.port}", flush=True)
+        if host == Settings.host:
+            print(f"Tailscale not available, proceeding on local machine at "
+                  f"http://{host}:{port or Settings.port}", flush=True)
     return Settings.from_env(
         host=host,
         port=port,
@@ -216,8 +216,8 @@ def start(
             ``tailscale`` is True.
         port: The TCP port, 5000 by default.
         tailscale: Bind this PC's Tailscale address, so tablets on the tailnet
-            reach the page and nothing else does. ``"auto"`` falls back to every
-            interface when Tailscale is missing.
+            reach the page and nothing else does. ``"auto"`` serves on this machine
+            only when Tailscale is missing.
         log_dir: Where the feedback logs go, ``./logs`` by default.
         images_dir: Where uploaded images go, ``./uploads`` by default.
         console_url: The calibration console to link, or None for an unlinked FELT.

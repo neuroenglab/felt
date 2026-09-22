@@ -49,7 +49,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--tailscale", nargs="?", const=True, default=False, choices=[True, "auto"], metavar="auto",
         help="bind this PC's Tailscale address, so tablets on the tailnet reach the page; "
-             "--tailscale auto binds every interface instead when Tailscale is missing",
+             "--tailscale auto serves on this machine instead when Tailscale is missing",
     )
     p.add_argument("--log-dir", default=None, help="where feedback logs are written (default ./logs)")
     p.add_argument("--images-dir", default=None, help="where uploaded images live (default ./uploads)")
