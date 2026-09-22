@@ -4,7 +4,7 @@ import unittest
 
 import pydantic
 
-from main import FeedbackLog
+from felt.app import FeedbackLog
 
 
 def log_with(**extra):

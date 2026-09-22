@@ -11,6 +11,13 @@ import xml.etree.ElementTree as ET
 
 from svgutils.compose import Figure, Panel, SVG
 
+
+def _images_dir(images_dir: Path | None) -> Path:
+    """The folder of the uploaded images: the argument, else the IMAGES_DIR variable."""
+    if images_dir is not None:
+        return Path(images_dir)
+    return Path(os.environ.get("IMAGES_DIR", "uploads"))
+
 def _get_point_sets_and_geometry(
     loaded_jsons: dict,
 ) -> tuple[dict[str, set], float, float, float, float, str]:
@@ -195,7 +202,11 @@ def _compose_with_background(
             except OSError:
                 pass
 
-def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> str:
+def render_heatmap_svg(
+    loaded_jsons: dict[str, Any],
+    include_original: bool,
+    images_dir: Path | None = None,
+) -> str:
     """
     Build an SVG heatmap: each cell is colored by how many files selected it (0 = not drawn, max = darkest).
     Uses segment_size_px from the first file and a bounding box of all chosen points.
@@ -288,7 +299,7 @@ def render_heatmap_svg(loaded_jsons: dict[str, Any], include_original: bool) -> 
     )
 
     if include_original and image_path:
-        images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
+        images_dir = _images_dir(images_dir)
         filename = Path(image_path).name
         bg_path = images_dir / filename
         if bg_path.exists():
@@ -301,6 +312,7 @@ def render_intersection_svg(
     loaded_jsons: dict[str, Any],
     best_combination: tuple[str, ...] | None,
     include_original: bool,
+    images_dir: Path | None = None,
 ) -> str:
     """
     Build an SVG of the intersection: only cells selected in every file of best_combination
@@ -335,7 +347,7 @@ def render_intersection_svg(
     )
 
     if include_original and image_path:
-        images_dir = Path(os.environ.get("IMAGES_DIR", "/app/uploads"))
+        images_dir = _images_dir(images_dir)
         filename = Path(image_path).name
         bg_path = images_dir / filename
         if bg_path.exists():
@@ -348,6 +360,7 @@ def render_visualizations(
     loaded_jsons: dict[str, Any],
     best_combination: tuple[str, ...] | None,
     include_original: bool,
+    images_dir: Path | None = None,
 ) -> dict[str, str]:
     """
     Produce heatmap and intersection SVGs from feedback logs.
@@ -355,6 +368,8 @@ def render_visualizations(
     Returns {"heatmap_svg": "...", "intersection_svg": "..."}.
     """
     return {
-        "heatmap_svg": render_heatmap_svg(loaded_jsons, include_original),
-        "intersection_svg": render_intersection_svg(loaded_jsons, best_combination, include_original),
+        "heatmap_svg": render_heatmap_svg(loaded_jsons, include_original, images_dir),
+        "intersection_svg": render_intersection_svg(
+            loaded_jsons, best_combination, include_original, images_dir
+        ),
     }
