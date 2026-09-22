@@ -122,6 +122,17 @@ class TailscaleTests(unittest.TestCase):
         self.assertIn("host='0.0.0.0'", message)
         self.assertIn("--host 0.0.0.0", message)
 
+    def test_auto_binds_every_interface_without_tailscale(self):
+        from felt import tailscale
+
+        original = tailscale.find_executable
+        tailscale.find_executable = lambda: None
+        try:
+            settings = felt.settings_for(tailscale="auto", port=5002)
+        finally:
+            tailscale.find_executable = original
+        self.assertEqual(settings.url, "http://0.0.0.0:5002")
+
     def test_without_the_flag_tailscale_is_never_consulted(self):
         settings = felt.settings_for(host="0.0.0.0", port=5001)
         self.assertEqual(settings.url, "http://0.0.0.0:5001")

@@ -23,7 +23,7 @@ import uvicorn
 
 from felt.app import create_app
 from felt.settings import Settings
-from felt.tailscale import tailscale_ipv4
+from felt.tailscale import TailscaleError, lan_ipv4, tailscale_ipv4
 
 logger = logging.getLogger("felt")
 
@@ -35,12 +35,19 @@ class FeltError(RuntimeError):
     """The service could not start, or stopped on its own."""
 
 
-def resolve_host(host: str | None, tailscale: bool) -> str:
+def resolve_host(host: str | None, tailscale: bool | str) -> str:
     """The interface to bind: this PC's Tailscale address, else ``host``.
+
+    ``tailscale="auto"`` binds every interface when Tailscale is missing.
 
     Raises:
         TailscaleError: ``tailscale`` is True and Tailscale is missing or not running.
     """
+    if tailscale == "auto":
+        try:
+            return tailscale_ipv4()
+        except TailscaleError:
+            return "0.0.0.0"
     if tailscale:
         return tailscale_ipv4()
     return host or Settings.host
@@ -50,7 +57,7 @@ def settings_for(
     *,
     host: str | None = None,
     port: int | None = None,
-    tailscale: bool = False,
+    tailscale: bool | str = False,
     log_dir: str | Path | None = None,
     images_dir: str | Path | None = None,
     console_url: str | None = None,
@@ -61,8 +68,13 @@ def settings_for(
     Raises:
         TailscaleError: ``tailscale`` is True and Tailscale is missing or not running.
     """
+    if tailscale:
+        host = resolve_host(host, tailscale)
+        if host == "0.0.0.0":
+            print(f"Tailscale is not available: FELT binds every interface, and the tablet reaches "
+                  f"it on the local network at http://{lan_ipv4()}:{port or Settings.port}", flush=True)
     return Settings.from_env(
-        host=resolve_host(host, tailscale) if tailscale else host,
+        host=host,
         port=port,
         log_dir=log_dir,
         images_dir=images_dir,
@@ -190,7 +202,7 @@ def start(
     *,
     host: str | None = None,
     port: int | None = None,
-    tailscale: bool = False,
+    tailscale: bool | str = False,
     log_dir: str | Path | None = None,
     images_dir: str | Path | None = None,
     console_url: str | None = None,
@@ -204,7 +216,8 @@ def start(
             ``tailscale`` is True.
         port: The TCP port, 5000 by default.
         tailscale: Bind this PC's Tailscale address, so tablets on the tailnet
-            reach the page and nothing else does.
+            reach the page and nothing else does. ``"auto"`` falls back to every
+            interface when Tailscale is missing.
         log_dir: Where the feedback logs go, ``./logs`` by default.
         images_dir: Where uploaded images go, ``./uploads`` by default.
         console_url: The calibration console to link, or None for an unlinked FELT.
@@ -226,7 +239,7 @@ def serve(
     *,
     host: str | None = None,
     port: int | None = None,
-    tailscale: bool = False,
+    tailscale: bool | str = False,
     log_dir: str | Path | None = None,
     images_dir: str | Path | None = None,
     console_url: str | None = None,

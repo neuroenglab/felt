@@ -45,7 +45,7 @@ returns once the port answers. It takes:
 |---|---|---|
 | `host` | `127.0.0.1` | The interface to bind. `0.0.0.0` for every network of the PC. |
 | `port` | `5000` | The TCP port. |
-| `tailscale` | `False` | Bind this PC's Tailscale address instead of `host`. |
+| `tailscale` | `False` | Bind this PC's Tailscale address instead of `host`. `"auto"` binds every interface when Tailscale is missing, and prints the LAN address for the tablet. |
 | `log_dir` | `./logs` | Where the feedback logs are written. |
 | `images_dir` | `./uploads` | Where uploaded body-part SVGs live. |
 | `console_url` | none | The calibration console to link, for example `http://127.0.0.1:8765`. |
@@ -89,8 +89,9 @@ changes) and `--version`. The environment variables `FELT_HOST`, `FELT_PORT`,
 `LOGS_DIR`, `IMAGES_DIR`, `CONSOLE_URL` and `ROOT_PATH` are the defaults of
 the same settings; an option wins over its variable.
 
-Without Tailscale, bind another interface and give the tablet the address of
-the PC on that network:
+`felt --tailscale auto` falls back to every interface when Tailscale is
+missing and prints the address of the PC on the local network for the tablet.
+Without Tailscale at all, bind another interface yourself:
 
 ```
 felt --host 0.0.0.0 --log-dir ./logs

@@ -31,6 +31,18 @@ class TailscaleError(RuntimeError):
     """Tailscale is not installed, not running or not logged in."""
 
 
+def lan_ipv4() -> str:
+    """This PC's address on the network it routes through, for a tablet on the same WiFi."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("10.255.255.255", 1))  # no packet is sent
+            return probe.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
+
+
 def _windows_path() -> str:
     program_files = os.environ.get("ProgramFiles", "")
     return os.path.join(program_files, "Tailscale", "tailscale.exe") if program_files else ""
