@@ -1,6 +1,7 @@
 """The application and the Python API, on a throwaway folder and a spare port."""
 
 import json
+import mimetypes
 import socket
 import tempfile
 import unittest
@@ -63,6 +64,17 @@ class AppTests(unittest.TestCase):
             self.assertEqual(answer.status_code, 200)
             self.assertEqual(answer.headers.get("cache-control"), "no-cache")
             self.assertIn(b"<div id=\"root\">", answer.content)
+
+    def test_the_page_script_is_javascript_whatever_the_registry_says(self):
+        if not self.settings.frontend_built:
+            self.skipTest("the marking page is not built")
+        # A Windows registry that maps .js to text/plain.
+        mimetypes.add_type("text/plain", ".js")
+        client = TestClient(create_app(self.settings))
+        script = next((self.settings.static_dir / "assets").glob("*.js")).name
+        answer = client.get(f"/assets/{script}")
+        self.assertEqual(answer.status_code, 200)
+        self.assertTrue(answer.headers["content-type"].startswith("text/javascript"))
 
     def test_a_missing_page_says_so(self):
         client = TestClient(create_app(self.settings.with_(static_dir=self.tmp / "nowhere")))

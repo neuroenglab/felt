@@ -8,6 +8,7 @@ service state (the console link and the marking-client leases) hangs on
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 from datetime import datetime
 from pathlib import Path
@@ -88,6 +89,18 @@ def check_file_setting_consistency(loaded_jsons: dict[str, Any]) -> None:
             raise ValueError(f"File {file_id} has different image path than the first file")
 
 
+def _register_page_types() -> None:
+    """The content types of the marking page files, whatever the Windows registry says.
+
+    Python takes file types from the registry, and on some PCs it maps .js to
+    text/plain. A browser refuses a module script of that type, so the page stays
+    an empty grey background.
+    """
+    mimetypes.add_type("text/javascript", ".js")
+    mimetypes.add_type("text/css", ".css")
+    mimetypes.add_type("image/svg+xml", ".svg")
+
+
 # --- the application ----------------------------------------------------------------
 
 
@@ -104,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(images_dir, exist_ok=True)
     os.makedirs(settings.hands_dir, exist_ok=True)
+    _register_page_types()
 
     app = FastAPI(root_path=root_path, title="FELT")
     app.state.settings = settings
