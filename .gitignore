@@ -1,18 +1,21 @@
-
-# SVG images
-assets/
-uploads/
-
-# Logs
-logs/
+# Uploaded SVG images and feedback logs of a local run, at the repository root
+/assets/
+/uploads/
+/logs/
 
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
-dist/
-wheels/
+/build/
+/dist/
+/wheels/
 *.egg-info
 
 # Virtual environments
 .venv
+
+# The built marking page lives in src/felt/static and is committed at release
+# time, so a git install carries it. Do not ignore it.
+
+# Sample images of the vendored component, ignored as before
+/frontend/feedback-locator/assets/

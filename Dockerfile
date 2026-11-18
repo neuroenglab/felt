@@ -5,13 +5,13 @@ WORKDIR /app/frontend
 ARG VITE_BASE_PATH=/
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 
-# Copy package manifests.
 COPY frontend/package*.json ./
-
 RUN npm ci
 
 COPY frontend/ .
-RUN npm run build
+# vite.config.ts writes the bundle to ../src/felt/static
+RUN mkdir -p /app/src/felt && npm run build
+
 FROM python:3.12-slim AS backend
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -21,17 +21,14 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --no-dev
-
-COPY main.py ./main.py
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
-# Copy from the 'frontend-build' stage instead of the local folder
-COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+COPY --from=frontend-build /app/src/felt/static ./src/felt/static
+RUN uv sync --no-dev
 
 ENV LOGS_DIR=/app/logs
 ENV IMAGES_DIR=/app/uploads
 ENV ROOT_PATH=
 EXPOSE 5000
 
-CMD ["uv", "run", "main.py", "--host", "0.0.0.0", "--port", "5000", "--log-dir", "/app/logs"]
+CMD ["uv", "run", "felt", "--host", "0.0.0.0", "--port", "5000"]

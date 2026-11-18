@@ -1,4 +1,7 @@
 .app-root {
+  /* Fixed width: the painting box does not follow the controls. */
+  width: 100%;
+  box-sizing: border-box;
   max-width: 1100px;
   margin: 32px auto;
   padding: 16px 20px 28px;
@@ -338,7 +341,170 @@
   justify-content: flex-end;
 }
 
+/* The pain and the intensity the subject reports beside the painting. */
+.report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-pain {
+  border-radius: 999px;
+  border: 2px solid #d1d5db;
+  background-color: #ffffff;
+  color: #374151;
+  padding: 0.45em 1.2em;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* The pain toggle when on. */
+.report-pain-on {
+  background-color: #dc2626;
+  border-color: #991b1b;
+  color: #ffffff;
+}
+
+.report-intensity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.report-intensity-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.report-intensity-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.report-step {
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* The chosen intensity step. */
+.report-step-on {
+  background-color: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.trial-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* SCORING before Save: the subject may draw and send. */
+.trial-banner-ready {
+  background-color: #dcfce7;
+  border-color: #16a34a;
+  color: #166534;
+}
+
+/* STIMULATING: the trial runs, the surface is locked. */
+.trial-banner-wait {
+  background-color: #dbeafe;
+  border-color: #2563eb;
+  color: #1e40af;
+}
+
+/* No trial to score. */
+.trial-banner-idle {
+  background-color: #f3f4f6;
+  border-color: #9ca3af;
+  color: #4b5563;
+}
+
+/* The console does not answer. */
+.trial-banner-down {
+  background-color: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+
+.trial-banner-answered {
+  color: #166534;
+  font-weight: 500;
+}
+
+/* The separator keeps the two texts of the banner apart. */
+.trial-banner-answered::before {
+  content: '\00b7\00a0';
+}
+
+.trial-banner-wrong-hand {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.hand-choice {
+  display: flex;
+  gap: 8px;
+}
+
+.hand-choice-button {
+  min-width: 120px;
+}
+
+.hand-choice-active {
+  background-color: #1f2937;
+  border-color: #1f2937;
+  color: #ffffff;
+}
+
+.hand-choice-active:hover {
+  background-color: #111827;
+  border-color: #111827;
+}
+
+.locator-lock {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(107, 114, 128, 0.55);
+  cursor: not-allowed;
+  z-index: 5;
+}
+
+.locator-lock-text {
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #374151;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+}
+
 .locator-wrapper {
+  position: relative;
   margin-top: 4px;
   border-radius: 12px;
   overflow: hidden;
@@ -380,6 +546,17 @@
   background-color: #f3f4f6;
   border-color: #9ca3af;
   transform: translateY(-1px);
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-button:disabled:hover,
+.secondary-button:disabled:hover {
+  transform: none;
 }
 
 .toast {
